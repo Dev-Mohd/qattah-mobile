@@ -179,7 +179,7 @@ struct LogMealView: View {
             return
         }
 
-        mealTypeId = mostLikelyMealType()?.id
+        mealTypeId = QuickLogPlanner.likelyMealType(snapshot.mealTypes)?.id
         applySuggestion(keepAttendees: false)
     }
 
@@ -198,15 +198,6 @@ struct LogMealView: View {
         if let suggested = suggestion.total, !keepAttendees, !totalEditedByHand {
             setAutoTotal(suggested)
         }
-    }
-
-    /// Before 11:00 → the first meal type (usually breakfast); after → the second, if any.
-    private func mostLikelyMealType() -> MealType? {
-        let types = snapshot.mealTypes
-        guard !types.isEmpty else { return nil }
-        let hour = Calendar.current.component(.hour, from: .now)
-        if hour >= 11, types.count > 1 { return types[1] }
-        return types[0]
     }
 
     private func save() {

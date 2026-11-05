@@ -29,6 +29,27 @@ final class AppDatabase: Sendable {
         try Self.migrator.migrate(writer)
     }
 
+    private static let sharedLock = NSLock()
+    nonisolated(unsafe) private static var sharedInstance: AppDatabase?
+
+    /// The single on-disk database for this process (used by the UI and by
+    /// Siri intents, which may run while the app is in the background).
+    static func shared() throws -> AppDatabase {
+        sharedLock.lock()
+        defer { sharedLock.unlock() }
+        if let sharedInstance { return sharedInstance }
+        let database = try openOnDisk()
+        sharedInstance = database
+        return database
+    }
+
+    /// Forgets the shared instance (after the file was moved aside).
+    static func resetShared() {
+        sharedLock.lock()
+        sharedInstance = nil
+        sharedLock.unlock()
+    }
+
     /// The app's on-disk database.
     static func openOnDisk(fileManager: FileManager = .default) throws -> AppDatabase {
         let documents = try fileManager.url(for: .documentDirectory, in: .userDomainMask,

@@ -10,3 +10,6 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 .DS_Store
+Qattah/Qattah.entitlements
+QattahWidget/Info.plist
+QattahWidget/QattahWidget.entitlements

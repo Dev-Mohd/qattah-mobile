@@ -30,8 +30,8 @@ struct QattahApp: App {
     }
 }
 
-/// Home screen plus app-wide behaviour: onboarding and keeping the daily
-/// reminder in sync with the data.
+/// Home screen plus app-wide behaviour: onboarding, and keeping the daily
+/// reminder, the widget and Siri suggestions in sync with the data.
 private struct RootView: View {
     @Environment(\.store) private var store
     @Environment(AppSettings.self) private var settings
@@ -52,6 +52,8 @@ private struct RootView: View {
                     for try await value in store.observeSummaries() {
                         summaries = value
                         await refreshReminders()
+                        WidgetSync.refresh(store: store)
+                        QattahShortcuts.updateAppShortcutParameters()
                     }
                 } catch {
                     // Observation only fails if the database is closed; nothing to do.
@@ -61,7 +63,13 @@ private struct RootView: View {
             .onChange(of: settings.reminderHour) { _, _ in Task { await refreshReminders() } }
             .onChange(of: settings.reminderMinute) { _, _ in Task { await refreshReminders() } }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await refreshReminders() } }
+                if phase == .active {
+                    Task {
+                        // Meals tapped in the widget are saved now.
+                        await WidgetSync.applyPendingLogs(store: store)
+                        await refreshReminders()
+                    }
+                }
             }
     }
 
@@ -92,7 +100,7 @@ final class AppBootstrap {
     func start() {
         guard case .loading = state else { return }
         do {
-            state = .ready(QattahStore(database: try AppDatabase.openOnDisk()))
+            state = .ready(QattahStore(database: try AppDatabase.shared()))
         } catch {
             state = .failed(error)
         }
@@ -102,6 +110,7 @@ final class AppBootstrap {
     func startFresh() {
         do {
             try AppDatabase.moveUnreadableDatabaseAside()
+            AppDatabase.resetShared()
             state = .loading
             start()
         } catch {

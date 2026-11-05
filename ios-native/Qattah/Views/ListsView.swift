@@ -65,6 +65,12 @@ struct ListsView: View {
                 Button("إلغاء", role: .cancel) { newListName = "" }
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
+            .onOpenURL { url in
+                // From the widget: qattah://list/<id>
+                guard url.scheme == "qattah", url.host == "list" else { return }
+                showingSettings = false
+                path = [url.lastPathComponent]
+            }
             .confirmationDialog("سيتم حذف القائمة «\(pendingDelete?.list.name ?? "")» مع كل أعضائها ووجباتها وسداداتها",
                                 isPresented: .constant(pendingDelete != nil), titleVisibility: .visible) {
                 Button("حذف القائمة", role: .destructive) {
