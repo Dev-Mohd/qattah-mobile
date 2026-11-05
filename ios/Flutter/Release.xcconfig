@@ -1,0 +1,2 @@
+#include? "Pods/Target Support Files/Pods-Qattah/Pods-Qattah.release.xcconfig"
+#include "Generated.xcconfig"

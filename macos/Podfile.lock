@@ -1,0 +1,97 @@
+PODS:
+  - file_selector_macos (0.0.1):
+    - FlutterMacOS
+  - flutter_local_notifications (0.0.1):
+    - FlutterMacOS
+  - flutter_secure_storage_darwin (10.0.0):
+    - Flutter
+    - FlutterMacOS
+  - flutter_timezone (0.1.0):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+  - FMDB/Core (2.7.12)
+  - FMDB/SQLCipher (2.7.12):
+    - FMDB/Core
+    - SQLCipher (~> 4.6)
+  - printing (1.0.0):
+    - FlutterMacOS
+  - share_plus (0.0.1):
+    - FlutterMacOS
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - sqflite_darwin (0.0.4):
+    - Flutter
+    - FlutterMacOS
+  - sqflite_sqlcipher (0.0.1):
+    - FlutterMacOS
+    - FMDB/SQLCipher (~> 2.7.5)
+    - SQLCipher (= 4.10.0)
+  - SQLCipher (4.10.0):
+    - SQLCipher/standard (= 4.10.0)
+  - SQLCipher/common (4.10.0)
+  - SQLCipher/standard (4.10.0):
+    - SQLCipher/common
+  - url_launcher_macos (0.0.1):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - file_selector_macos (from `Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos`)
+  - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
+  - flutter_secure_storage_darwin (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
+  - flutter_timezone (from `Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - printing (from `Flutter/ephemeral/.symlinks/plugins/printing/macos`)
+  - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
+  - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - sqflite_darwin (from `Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin`)
+  - sqflite_sqlcipher (from `Flutter/ephemeral/.symlinks/plugins/sqflite_sqlcipher/macos`)
+  - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
+
+SPEC REPOS:
+  trunk:
+    - FMDB
+    - SQLCipher
+
+EXTERNAL SOURCES:
+  file_selector_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos
+  flutter_local_notifications:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos
+  flutter_secure_storage_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin
+  flutter_timezone:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  printing:
+    :path: Flutter/ephemeral/.symlinks/plugins/printing/macos
+  share_plus:
+    :path: Flutter/ephemeral/.symlinks/plugins/share_plus/macos
+  shared_preferences_foundation:
+    :path: Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin
+  sqflite_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin
+  sqflite_sqlcipher:
+    :path: Flutter/ephemeral/.symlinks/plugins/sqflite_sqlcipher/macos
+  url_launcher_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos
+
+SPEC CHECKSUMS:
+  file_selector_macos: 9e9e068e90ebee155097d00e89ae91edb2374db7
+  flutter_local_notifications: 13862b132e32eb858dea558a86d45d08daeacfe7
+  flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
+  flutter_timezone: d272288c69082ad571630e0d17140b3d6b93dc0c
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  FMDB: 728731dd336af3936ce00f91d9d8495f5718a0e6
+  printing: c4cf83c78fd684f9bc318e6aadc18972aa48f617
+  share_plus: 510bf0af1a42cd602274b4629920c9649c52f4cc
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  sqflite_sqlcipher: a4c2f17db76d2f86dfe044937d3a851d8880cbb9
+  SQLCipher: eb79c64049cb002b4e9fcb30edb7979bf4706dfc
+  url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
+
+PODFILE CHECKSUM: 52f040120df3c4af73942652c393208a163e9987
+
+COCOAPODS: 1.16.2

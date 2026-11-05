@@ -1,0 +1,97 @@
+PODS:
+  - file_selector_ios (0.0.1):
+    - Flutter
+  - Flutter (1.0.0)
+  - flutter_local_notifications (0.0.1):
+    - Flutter
+  - flutter_secure_storage_darwin (10.0.0):
+    - Flutter
+    - FlutterMacOS
+  - flutter_timezone (0.0.1):
+    - Flutter
+  - FMDB/Core (2.7.12)
+  - FMDB/SQLCipher (2.7.12):
+    - FMDB/Core
+    - SQLCipher (~> 4.6)
+  - printing (1.0.0):
+    - Flutter
+  - share_plus (0.0.1):
+    - Flutter
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - sqflite_darwin (0.0.4):
+    - Flutter
+    - FlutterMacOS
+  - sqflite_sqlcipher (0.0.1):
+    - Flutter
+    - FMDB/SQLCipher (~> 2.7.5)
+    - SQLCipher (= 4.10.0)
+  - SQLCipher (4.10.0):
+    - SQLCipher/standard (= 4.10.0)
+  - SQLCipher/common (4.10.0)
+  - SQLCipher/standard (4.10.0):
+    - SQLCipher/common
+  - url_launcher_ios (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - file_selector_ios (from `.symlinks/plugins/file_selector_ios/ios`)
+  - Flutter (from `Flutter`)
+  - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
+  - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
+  - flutter_timezone (from `.symlinks/plugins/flutter_timezone/ios`)
+  - printing (from `.symlinks/plugins/printing/ios`)
+  - share_plus (from `.symlinks/plugins/share_plus/ios`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - sqflite_sqlcipher (from `.symlinks/plugins/sqflite_sqlcipher/ios`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+
+SPEC REPOS:
+  trunk:
+    - FMDB
+    - SQLCipher
+
+EXTERNAL SOURCES:
+  file_selector_ios:
+    :path: ".symlinks/plugins/file_selector_ios/ios"
+  Flutter:
+    :path: Flutter
+  flutter_local_notifications:
+    :path: ".symlinks/plugins/flutter_local_notifications/ios"
+  flutter_secure_storage_darwin:
+    :path: ".symlinks/plugins/flutter_secure_storage_darwin/darwin"
+  flutter_timezone:
+    :path: ".symlinks/plugins/flutter_timezone/ios"
+  printing:
+    :path: ".symlinks/plugins/printing/ios"
+  share_plus:
+    :path: ".symlinks/plugins/share_plus/ios"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
+  sqflite_darwin:
+    :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  sqflite_sqlcipher:
+    :path: ".symlinks/plugins/sqflite_sqlcipher/ios"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
+
+SPEC CHECKSUMS:
+  file_selector_ios: ec57ec07954363dd730b642e765e58f199bb621a
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
+  flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
+  flutter_timezone: 7c838e17ffd4645d261e87037e5bebf6d38fe544
+  FMDB: 728731dd336af3936ce00f91d9d8495f5718a0e6
+  printing: 54ff03f28fe9ba3aa93358afb80a8595a071dd07
+  share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  sqflite_sqlcipher: 8e5bdaae6b2c254f8a277a564f07bc4e2a8642a3
+  SQLCipher: eb79c64049cb002b4e9fcb30edb7979bf4706dfc
+  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
+
+PODFILE CHECKSUM: 26b1af3c1bd1c788c40fd2118ae1fd011526d4d7
+
+COCOAPODS: 1.16.2
