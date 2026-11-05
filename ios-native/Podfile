@@ -5,7 +5,9 @@ use_frameworks! :linkage => :static
 # app used through sqflite_sqlcipher, so the existing database opens as-is.
 # GRDB.swift/SQLCipher must be the ONLY GRDB/SQLite pod in the project.
 target 'Qattah' do
-  pod 'GRDB.swift/SQLCipher', '~> 7.0'
+  # GRDB 7 is not published on CocoaPods trunk (CocoaPods issue #11839, see
+  # GRDB's README), so it is pulled from GitHub at a pinned tag.
+  pod 'GRDB.swift/SQLCipher', :git => 'https://github.com/groue/GRDB.swift.git', :tag => 'v7.12.0'
   pod 'SQLCipher', '~> 4.10'
 
   target 'QattahTests' do
