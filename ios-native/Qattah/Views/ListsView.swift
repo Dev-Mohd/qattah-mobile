@@ -10,9 +10,12 @@ struct ListsView: View {
     @State private var newListName = ""
     @State private var showingNewList = false
     @State private var errorMessage: String?
+    @State private var showingSettings = false
+    @State private var path: [String] = []
+    @State private var pendingDelete: ListSummary?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if loaded && summaries.isEmpty {
                     ContentUnavailableView {
@@ -28,6 +31,11 @@ struct ListsView: View {
                         NavigationLink(value: summary.list.id) {
                             ListRow(summary: summary)
                         }
+                        .swipeActions {
+                            Button(role: .destructive) { pendingDelete = summary } label: {
+                                Label("حذف", systemImage: "trash")
+                            }
+                        }
                     }
                 }
             }
@@ -36,6 +44,13 @@ struct ListsView: View {
                 ListDetailView(listId: listId)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Label("الإعدادات", systemImage: "gearshape")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingNewList = true
@@ -48,6 +63,17 @@ struct ListsView: View {
                 TextField("مثال: فطور الدوام", text: $newListName)
                 Button("إنشاء") { createList() }
                 Button("إلغاء", role: .cancel) { newListName = "" }
+            }
+            .sheet(isPresented: $showingSettings) { SettingsView() }
+            .confirmationDialog("سيتم حذف القائمة «\(pendingDelete?.list.name ?? "")» مع كل أعضائها ووجباتها وسداداتها",
+                                isPresented: .constant(pendingDelete != nil), titleVisibility: .visible) {
+                Button("حذف القائمة", role: .destructive) {
+                    if let id = pendingDelete?.list.id {
+                        Task { try? await store.deleteList(id: id) }
+                    }
+                    pendingDelete = nil
+                }
+                Button("إلغاء", role: .cancel) { pendingDelete = nil }
             }
             .alert("حدث خطأ", isPresented: .constant(errorMessage != nil)) {
                 Button("حسناً") { errorMessage = nil }
@@ -73,8 +99,10 @@ struct ListsView: View {
         guard !name.isEmpty else { return }
         Task {
             do {
-                try await store.saveList(QattahList(name: name))
+                let list = QattahList(name: name)
+                try await store.saveList(list)
                 Haptics.success()
+                path.append(list.id) // open the new list straight away
             } catch {
                 errorMessage = error.localizedDescription
             }

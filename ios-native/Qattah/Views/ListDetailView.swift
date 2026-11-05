@@ -6,15 +6,21 @@ struct ListDetailView: View {
     let listId: String
 
     @Environment(\.store) private var store
+    @Environment(\.dismiss) private var dismiss
     @State private var snapshot: ListSnapshot?
+    @State private var loaded = false
     @State private var tab: DetailTab = .balances
     @State private var showingLogMeal = false
     @State private var paymentMember: Member?
+    @State private var renaming = false
+    @State private var newName = ""
+    @State private var confirmDelete = false
     @State private var errorMessage: String?
 
     enum DetailTab: String, CaseIterable, Identifiable {
         case balances = "الأرصدة"
         case meals = "الوجبات"
+        case report = "التقرير"
         case members = "الأعضاء"
         var id: String { rawValue }
     }
@@ -23,6 +29,8 @@ struct ListDetailView: View {
         Group {
             if let snapshot {
                 content(snapshot)
+            } else if loaded {
+                ContentUnavailableView("القائمة غير موجودة", systemImage: "tray")
             } else {
                 ProgressView()
             }
@@ -32,7 +40,9 @@ struct ListDetailView: View {
         .task {
             do {
                 for try await value in store.observeList(id: listId) {
+                    if !loaded, let value, value.members.isEmpty { tab = .members }
                     snapshot = value
+                    loaded = true
                 }
             } catch {
                 errorMessage = error.localizedDescription
@@ -62,25 +72,16 @@ struct ListDetailView: View {
                 BalancesSection(snapshot: snapshot, balances: balances) { paymentMember = $0 }
             case .meals:
                 MealsSection(snapshot: snapshot)
+            case .report:
+                ReportView(snapshot: snapshot)
             case .members:
                 MembersSection(snapshot: snapshot)
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button {
-                Haptics.tap()
-                showingLogMeal = true
-            } label: {
-                Label("سجّل وجبة اليوم", systemImage: "plus.circle.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+            if tab != .report {
+                logMealButton(snapshot)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-            .disabled(snapshot.members.filter(\.isActive).isEmpty)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -90,6 +91,21 @@ struct ListDetailView: View {
                     Label("مشاركة الأرصدة", systemImage: "square.and.arrow.up")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    newName = snapshot.list.name
+                    renaming = true
+                } label: {
+                    Label("تعديل الاسم", systemImage: "pencil")
+                }
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button(role: .destructive) {
+                    confirmDelete = true
+                } label: {
+                    Label("حذف القائمة", systemImage: "trash")
+                }
+            }
         }
         .sheet(isPresented: $showingLogMeal) {
             LogMealView(snapshot: snapshot)
@@ -97,6 +113,56 @@ struct ListDetailView: View {
         .sheet(item: $paymentMember) { member in
             AddPaymentView(member: member,
                            balance: balances.members.first { $0.id == member.id })
+        }
+        .alert("تعديل اسم القائمة", isPresented: $renaming) {
+            TextField("الاسم", text: $newName)
+            Button("حفظ") { rename(snapshot.list) }
+            Button("إلغاء", role: .cancel) {}
+        }
+        .confirmationDialog("سيتم حذف القائمة «\(snapshot.list.name)» مع كل أعضائها ووجباتها وسداداتها",
+                            isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("حذف القائمة", role: .destructive) { delete(snapshot.list) }
+        }
+    }
+
+    private func logMealButton(_ snapshot: ListSnapshot) -> some View {
+        let hasMembers = !snapshot.members.filter(\.isActive).isEmpty
+        return Button {
+            Haptics.tap()
+            if hasMembers {
+                showingLogMeal = true
+            } else {
+                tab = .members
+            }
+        } label: {
+            Label(hasMembers ? "سجّل وجبة اليوم" : "أضف الأعضاء أولاً",
+                  systemImage: hasMembers ? "plus.circle.fill" : "person.badge.plus")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+
+    private func rename(_ list: QattahList) {
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        var updated = list
+        updated.name = name
+        Task { try? await store.saveList(updated) }
+    }
+
+    private func delete(_ list: QattahList) {
+        Task {
+            do {
+                try await store.deleteList(id: list.id)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
