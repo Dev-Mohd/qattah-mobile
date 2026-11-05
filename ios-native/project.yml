@@ -1,0 +1,75 @@
+# XcodeGen spec — generates Qattah.xcodeproj.
+#   brew install xcodegen cocoapods
+#   xcodegen generate && pod install
+#   open Qattah.xcworkspace
+name: Qattah
+options:
+  bundleIdPrefix: qattah.com
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: ar
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: U8874JC7QW
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO   # required by CocoaPods script phases
+
+packages:
+  QattahKit:
+    path: Packages/QattahKit
+
+targets:
+  Qattah:
+    type: application
+    platform: iOS
+    sources:
+      - path: Qattah
+      - path: Shared
+    dependencies:
+      - package: QattahKit
+    settings:
+      base:
+        # Same bundle id as the Flutter app → ships as an update and keeps users' data.
+        PRODUCT_BUNDLE_IDENTIFIER: qattah.com.qattah
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: Qattah/Info.plist
+      properties:
+        CFBundleDisplayName: قطه
+        CFBundleDevelopmentRegion: ar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIAppFonts: [SaudiRiyal.ttf, SaudiRiyal-Bold.ttf]
+        ITSAppUsesNonExemptEncryption: false
+
+  QattahTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: QattahTests
+    dependencies:
+      - target: Qattah
+      - package: QattahKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: qattah.com.qattah.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Qattah:
+    build:
+      targets:
+        Qattah: all
+        QattahTests: [test]
+    test:
+      targets:
+        - QattahTests
+        - package: QattahKit/QattahKitTests
