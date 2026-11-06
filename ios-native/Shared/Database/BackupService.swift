@@ -42,7 +42,7 @@ struct BackupService {
     func export() throws -> URL {
         let tables: [String: [[String: Any]]] = try database.writer.read { db in
             var result: [String: [[String: Any]]] = [:]
-            for table in FlutterSchema.tables {
+            for table in AppDatabase.allTables {
                 let rows = try Row.fetchAll(db, sql: "SELECT * FROM \(table)")
                 result[table] = rows.map(Self.jsonObject(from:))
             }
@@ -84,10 +84,10 @@ struct BackupService {
         let tables = try readTables(url)
 
         try database.writer.write { db in
-            for table in FlutterSchema.tables.reversed() {
+            for table in AppDatabase.allTables.reversed() {
                 try db.execute(sql: "DELETE FROM \(table)")
             }
-            for table in FlutterSchema.tables {
+            for table in AppDatabase.allTables {
                 let known = Set(try db.columns(in: table).map(\.name))
                 for row in tables[table] ?? [] {
                     let columns = row.keys.filter(known.contains).sorted()
@@ -109,7 +109,7 @@ struct BackupService {
 
     func deleteAllData() throws {
         try database.writer.write { db in
-            for table in FlutterSchema.tables.reversed() {
+            for table in AppDatabase.allTables.reversed() {
                 try db.execute(sql: "DELETE FROM \(table)")
             }
         }
@@ -132,7 +132,7 @@ struct BackupService {
         }
 
         var result: [String: [[String: Any]]] = [:]
-        for table in FlutterSchema.tables {
+        for table in AppDatabase.allTables {
             guard let value = tables[table] else { continue }
             guard let rows = value as? [[String: Any]] else { throw BackupError.invalidTable(table) }
             result[table] = rows

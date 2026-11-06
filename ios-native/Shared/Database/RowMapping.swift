@@ -90,6 +90,7 @@ extension Member {
                   isActive: row.bool("is_active", default: true),
                   openingBalance: row.money("opening_balance"),
                   isDefaultAttendee: row.bool("is_default_attendee", default: true),
+                  phone: row.optionalString("phone"),
                   createdAt: row.date("created_at"),
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }
@@ -119,6 +120,8 @@ extension MealRecord {
                   day: Day(row.string("date")) ?? Day(createdAt),
                   totalAmount: Money(riyals: total),
                   note: row.string("note"),
+                  splitMode: MealRecord.SplitMode(rawValue: row.string("split_mode")) ?? .equal,
+                  extras: row.money("extras"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }
@@ -146,5 +149,26 @@ extension Payment {
                   paidOn: Day(row.string("paid_on")) ?? Day(createdAt),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
+    }
+}
+
+extension MenuItem {
+    init(row: Row) {
+        self.init(id: row.string("id"),
+                  listId: row.string("list_id"),
+                  name: row.string("name"),
+                  price: row.money("price"),
+                  createdAt: row.date("created_at"))
+    }
+}
+
+extension OrderLine {
+    init(row: Row) {
+        self.init(id: row.string("id"),
+                  recordId: row.string("record_id"),
+                  memberId: row.optionalString("member_id"),
+                  itemName: row.string("item_name"),
+                  unitPrice: row.money("unit_price"),
+                  quantity: (row["quantity"] as Int?) ?? 1)
     }
 }

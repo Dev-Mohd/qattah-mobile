@@ -101,4 +101,39 @@ final class QattahStoreTests: XCTestCase {
         // 5.50 opening + 33.33 legacy share matched by unique name − 10 paid
         XCTAssertEqual(snapshot.balances.members.first?.net, Money(riyals: 28.83))
     }
+
+    func testItemizedMealStoresLinesAndProportionalShares() async throws {
+        let store = try makeStore()
+        let list = QattahList(name: "الدوام")
+        try await store.saveList(list)
+        let a = Member(listId: list.id, name: "أ", phone: "0551234567")
+        let b = Member(listId: list.id, name: "ب")
+        try await store.saveMember(a)
+        try await store.saveMember(b)
+
+        let meal = MealRecord(listId: list.id, mealTypeId: nil, mealName: "فطور", day: .today(), totalAmount: .zero)
+        let lines = [
+            OrderLine(recordId: "", memberId: a.id, itemName: "فول", unitPrice: Money(riyals: 10)),
+            OrderLine(recordId: "", memberId: b.id, itemName: "تميس", unitPrice: Money(riyals: 5), quantity: 2),
+            OrderLine(recordId: "", memberId: nil, itemName: "شاي", unitPrice: Money(riyals: 4)),
+        ]
+        try await store.saveItemizedMeal(meal, attendees: [a, b], lines: lines, extras: Money(riyals: 6))
+
+        let snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        let record = try XCTUnwrap(snapshot.records.first)
+        XCTAssertEqual(record.splitMode, .items)
+        XCTAssertEqual(record.extras, Money(riyals: 6))
+        XCTAssertEqual(record.totalAmount, Money(riyals: 30))            // 10 + 10 + 4 + 6
+        XCTAssertEqual(snapshot.orderLines(of: record).count, 3)
+        XCTAssertEqual(snapshot.lastItemizedMeal(mealTypeId: nil)?.id, record.id)
+        // a: 10 + 2 (tea) + 3 delivery = 15 ; b: 10 + 2 + 3 = 15
+        XCTAssertEqual(snapshot.balances.members.map(\.net), [Money(riyals: 15), Money(riyals: 15)])
+        XCTAssertEqual(snapshot.members.first { $0.id == a.id }?.phone, "0551234567")
+
+        // Switching the same meal back to an equal split removes its lines.
+        try await store.saveMeal(record, attendees: [a, b])
+        let after = try XCTUnwrap(try store.snapshot(listId: list.id))
+        XCTAssertTrue(after.orderLines.isEmpty)
+        XCTAssertEqual(after.records.first?.splitMode, .equal)
+    }
 }

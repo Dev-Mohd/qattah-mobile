@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import QattahKit
 
 /// User preferences, stored in UserDefaults.
 ///
@@ -37,6 +38,7 @@ final class AppSettings {
         static let reminderMinute = "dailyReminderMinute"
         static let onboardingSeen = "onboardingSeen"
         static let migratedFromFlutter = "migratedFlutterPreferences"
+        static let paymentDetails = "paymentDetails"
     }
 
     private let defaults: UserDefaults
@@ -61,6 +63,15 @@ final class AppSettings {
         didSet { defaults.set(onboardingSeen, forKey: Key.onboardingSeen) }
     }
 
+    /// The organizer's bank / wallet details, added to reminders.
+    var paymentDetails: PaymentDetails {
+        didSet {
+            if let data = try? JSONEncoder().encode(paymentDetails) {
+                defaults.set(data, forKey: Key.paymentDetails)
+            }
+        }
+    }
+
     /// The reminder time as a Date today (for DatePicker binding).
     var reminderTime: Date {
         get {
@@ -82,6 +93,8 @@ final class AppSettings {
         reminderHour = defaults.object(forKey: Key.reminderHour) as? Int ?? 12
         reminderMinute = defaults.object(forKey: Key.reminderMinute) as? Int ?? 0
         onboardingSeen = defaults.bool(forKey: Key.onboardingSeen)
+        paymentDetails = defaults.data(forKey: Key.paymentDetails)
+            .flatMap { try? JSONDecoder().decode(PaymentDetails.self, from: $0) } ?? PaymentDetails()
     }
 
     private static func migrateFlutterPreferences(_ defaults: UserDefaults) {

@@ -37,12 +37,15 @@ public struct Member: Identifiable, Hashable, Sendable {
     public var openingBalance: Money
     /// Pre-selected when logging a new meal.
     public var isDefaultAttendee: Bool
+    /// Mobile number for WhatsApp reminders (optional, e.g. "0551234567").
+    public var phone: String?
     public var createdAt: Date
     public var updatedAt: Date
 
     public init(id: String = UUID().uuidString.lowercased(), listId: String, name: String,
                 emoji: String = "👤", isActive: Bool = true, openingBalance: Money = .zero,
-                isDefaultAttendee: Bool = true, createdAt: Date = .now, updatedAt: Date = .now) {
+                isDefaultAttendee: Bool = true, phone: String? = nil,
+                createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.listId = listId
         self.name = name
@@ -50,6 +53,7 @@ public struct Member: Identifiable, Hashable, Sendable {
         self.isActive = isActive
         self.openingBalance = openingBalance
         self.isDefaultAttendee = isDefaultAttendee
+        self.phone = phone
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -85,11 +89,23 @@ public struct MealRecord: Identifiable, Hashable, Sendable {
     public var day: Day
     public var totalAmount: Money
     public var note: String
+    /// How the total was divided.
+    public var splitMode: SplitMode
+    /// Delivery / tax / tip added on top of the items (itemized meals only).
+    public var extras: Money
     public var createdAt: Date
     public var updatedAt: Date
 
+    public enum SplitMode: String, Sendable, Hashable {
+        /// Total divided equally between attendees.
+        case equal
+        /// Each attendee pays for what they ordered (+ a share of extras).
+        case items
+    }
+
     public init(id: String = UUID().uuidString.lowercased(), listId: String, mealTypeId: String?,
                 mealName: String, day: Day, totalAmount: Money, note: String = "",
+                splitMode: SplitMode = .equal, extras: Money = .zero,
                 createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.listId = listId
@@ -98,9 +114,52 @@ public struct MealRecord: Identifiable, Hashable, Sendable {
         self.day = day
         self.totalAmount = totalAmount
         self.note = note
+        self.splitMode = splitMode
+        self.extras = extras
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
+}
+
+/// An item on the list's restaurant menu ("فول", "تميس"…).
+public struct MenuItem: Identifiable, Hashable, Sendable {
+    public var id: String
+    public var listId: String
+    public var name: String
+    public var price: Money
+    public var createdAt: Date
+
+    public init(id: String = UUID().uuidString.lowercased(), listId: String, name: String,
+                price: Money, createdAt: Date = .now) {
+        self.id = id
+        self.listId = listId
+        self.name = name
+        self.price = price
+        self.createdAt = createdAt
+    }
+}
+
+/// One line of an itemized meal: who ordered what.
+public struct OrderLine: Identifiable, Hashable, Sendable {
+    public var id: String
+    public var recordId: String
+    /// `nil` = shared by all attendees (e.g. a big plate in the middle).
+    public var memberId: String?
+    public var itemName: String
+    public var unitPrice: Money
+    public var quantity: Int
+
+    public init(id: String = UUID().uuidString.lowercased(), recordId: String, memberId: String?,
+                itemName: String, unitPrice: Money, quantity: Int = 1) {
+        self.id = id
+        self.recordId = recordId
+        self.memberId = memberId
+        self.itemName = itemName
+        self.unitPrice = unitPrice
+        self.quantity = quantity
+    }
+
+    public var lineTotal: Money { unitPrice * quantity }
 }
 
 /// One attendee's share of a meal (table `record_participants`).

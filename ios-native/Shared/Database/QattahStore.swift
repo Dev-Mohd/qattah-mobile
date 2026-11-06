@@ -10,6 +10,8 @@ struct ListSnapshot: Sendable {
     var records: [MealRecord]
     var participants: [Participant]
     var payments: [Payment]
+    var menuItems: [MenuItem] = []
+    var orderLines: [OrderLine] = []
 
     var balances: ListBalances {
         BalanceCalculator.balances(members: members, records: records,
@@ -18,6 +20,17 @@ struct ListSnapshot: Sendable {
 
     func participants(of record: MealRecord) -> [Participant] {
         participants.filter { $0.recordId == record.id }
+    }
+
+    func orderLines(of record: MealRecord) -> [OrderLine] {
+        orderLines.filter { $0.recordId == record.id }
+    }
+
+    /// The latest itemized meal of a meal type, to repeat yesterday's order.
+    func lastItemizedMeal(mealTypeId: String?) -> MealRecord? {
+        records
+            .filter { $0.splitMode == .items && $0.mealTypeId == mealTypeId }
+            .max { ($0.day, $0.createdAt) < ($1.day, $1.createdAt) }
     }
 }
 
@@ -96,9 +109,19 @@ final class QattahStore: Sendable {
         let payments = try Row.fetchAll(db, sql: """
             SELECT * FROM payments WHERE list_id = ? ORDER BY paid_on DESC, created_at DESC
             """, arguments: [listId]).map(Payment.init(row:))
+        let menuItems = try Row.fetchAll(db, sql: """
+            SELECT * FROM menu_items WHERE list_id = ? ORDER BY created_at
+            """, arguments: [listId]).map(MenuItem.init(row:))
+        let orderLines = try Row.fetchAll(db, sql: """
+            SELECT ri.* FROM record_items ri
+            JOIN records r ON r.id = ri.record_id
+            WHERE r.list_id = ?
+            ORDER BY ri.created_at
+            """, arguments: [listId]).map(OrderLine.init(row:))
 
         return ListSnapshot(list: QattahList(row: listRow), members: members, mealTypes: mealTypes,
-                            records: records, participants: participants, payments: payments)
+                            records: records, participants: participants, payments: payments,
+                            menuItems: menuItems, orderLines: orderLines)
     }
 
     // MARK: - Lists
@@ -128,16 +151,17 @@ final class QattahStore: Sendable {
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO members (id, list_id, name, emoji, is_active, opening_balance,
-                                     is_default_attendee, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     is_default_attendee, phone, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   name = excluded.name, emoji = excluded.emoji, is_active = excluded.is_active,
                   opening_balance = excluded.opening_balance,
                   is_default_attendee = excluded.is_default_attendee,
+                  phone = excluded.phone,
                   updated_at = excluded.updated_at
                 """, arguments: [member.id, member.listId, member.name, member.emoji,
                                  member.isActive ? 1 : 0, member.openingBalance.riyals,
-                                 member.isDefaultAttendee ? 1 : 0,
+                                 member.isDefaultAttendee ? 1 : 0, member.phone,
                                  DBDate.string(member.createdAt), DBDate.string(.now)])
         }
     }
@@ -182,32 +206,63 @@ final class QattahStore: Sendable {
 
     // MARK: - Meals
 
-    /// Saves a meal and splits its total among the attendees, to the halala.
+    /// Saves a meal and splits its total equally among the attendees, to the halala.
     /// Passing an existing `record.id` replaces that meal (edit).
     func saveMeal(_ record: MealRecord, attendees: [Member]) async throws {
+        var record = record
+        record.splitMode = .equal
+        record.extras = .zero
         let shares = SplitCalculator.split(record.totalAmount, among: attendees.map(\.id))
+        try await write(record, attendees: attendees, shares: shares, lines: [])
+    }
+
+    /// Saves an itemized meal: each attendee pays for their own lines, shared
+    /// lines (no member) are split equally, extras proportionally.
+    /// The record's total is recomputed from the lines.
+    func saveItemizedMeal(_ record: MealRecord, attendees: [Member], lines: [OrderLine], extras: Money) async throws {
+        let attendeeIds = Set(attendees.map(\.id))
+        let kept = lines
+            .filter { $0.quantity > 0 && ($0.memberId == nil || attendeeIds.contains($0.memberId!)) }
+            .map { line -> OrderLine in
+                var copy = line
+                copy.recordId = record.id
+                return copy
+            }
+        let result = ItemSplitCalculator.split(lines: kept, attendeeIds: attendees.map(\.id), extras: extras)
+        var record = record
+        record.splitMode = .items
+        record.extras = extras
+        record.totalAmount = result.total
+        try await write(record, attendees: attendees, shares: result.shares, lines: kept)
+    }
+
+    private func write(_ record: MealRecord, attendees: [Member], shares: [(id: String, share: Money)],
+                       lines: [OrderLine]) async throws {
         let perPerson = SplitCalculator.perPerson(record.totalAmount, attendeeCount: attendees.count)
         let names = Dictionary(uniqueKeysWithValues: attendees.map { ($0.id, $0.name) })
         let now = DBDate.string(.now)
+        let shareRows = shares.map { (id: $0.id, share: $0.share) }
 
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO records (id, list_id, meal_type_id, meal_name, date, total_amount, total_price,
-                                     per_person, price_per_person, note, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     per_person, price_per_person, note, split_mode, extras, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   meal_type_id = excluded.meal_type_id, meal_name = excluded.meal_name,
                   date = excluded.date, total_amount = excluded.total_amount,
                   total_price = excluded.total_price, per_person = excluded.per_person,
                   price_per_person = excluded.price_per_person, note = excluded.note,
+                  split_mode = excluded.split_mode, extras = excluded.extras,
                   updated_at = excluded.updated_at
                 """, arguments: [record.id, record.listId, record.mealTypeId, record.mealName,
                                  record.day.description, record.totalAmount.riyals, record.totalAmount.riyals,
                                  perPerson.riyals, perPerson.riyals, record.note,
+                                 record.splitMode.rawValue, record.extras.riyals,
                                  DBDate.string(record.createdAt), now])
 
             try db.execute(sql: "DELETE FROM record_participants WHERE record_id = ?", arguments: [record.id])
-            for (memberId, share) in shares {
+            for (memberId, share) in shareRows {
                 try db.execute(sql: """
                     INSERT INTO record_participants (id, record_id, member_id, member_name, share,
                                                      share_amount, is_present, created_at, updated_at)
@@ -215,6 +270,35 @@ final class QattahStore: Sendable {
                     """, arguments: [UUID().uuidString.lowercased(), record.id, memberId,
                                      names[memberId] ?? "عضو", share.riyals, share.riyals, now, now])
             }
+
+            try db.execute(sql: "DELETE FROM record_items WHERE record_id = ?", arguments: [record.id])
+            for line in lines {
+                try db.execute(sql: """
+                    INSERT INTO record_items (id, record_id, member_id, item_name, unit_price, quantity, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [line.id, record.id, line.memberId, line.itemName,
+                                     line.unitPrice.riyals, line.quantity, now])
+            }
+        }
+    }
+
+    // MARK: - Menu
+
+    func saveMenuItem(_ item: MenuItem) async throws {
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO menu_items (id, list_id, name, price, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name, price = excluded.price, updated_at = excluded.updated_at
+                """, arguments: [item.id, item.listId, item.name, item.price.riyals,
+                                 DBDate.string(item.createdAt), DBDate.string(.now)])
+        }
+    }
+
+    func deleteMenuItem(id: String) async throws {
+        try await database.writer.write { db in
+            try db.execute(sql: "DELETE FROM menu_items WHERE id = ?", arguments: [id])
         }
     }
 
@@ -225,17 +309,27 @@ final class QattahStore: Sendable {
     }
 
     /// Re-inserts a deleted meal exactly as it was (for "undo").
-    func restoreMeal(_ record: MealRecord, participants: [Participant]) async throws {
+    func restoreMeal(_ record: MealRecord, participants: [Participant], lines: [OrderLine] = []) async throws {
         let perPerson = SplitCalculator.perPerson(record.totalAmount, attendeeCount: participants.count).riyals
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT OR IGNORE INTO records (id, list_id, meal_type_id, meal_name, date, total_amount,
-                                               total_price, per_person, price_per_person, note, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                               total_price, per_person, price_per_person, note, split_mode,
+                                               extras, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: [record.id, record.listId, record.mealTypeId, record.mealName,
                                  record.day.description, record.totalAmount.riyals, record.totalAmount.riyals,
-                                 perPerson, perPerson, record.note, DBDate.string(record.createdAt),
+                                 perPerson, perPerson, record.note, record.splitMode.rawValue,
+                                 record.extras.riyals, DBDate.string(record.createdAt),
                                  DBDate.string(record.updatedAt)])
+            for line in lines {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO record_items (id, record_id, member_id, item_name, unit_price,
+                                                        quantity, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [line.id, line.recordId, line.memberId, line.itemName,
+                                     line.unitPrice.riyals, line.quantity, DBDate.string(.now)])
+            }
             for p in participants {
                 try db.execute(sql: """
                     INSERT OR IGNORE INTO record_participants (id, record_id, member_id, member_name, share,

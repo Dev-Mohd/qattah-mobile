@@ -7,6 +7,7 @@ struct ListDetailView: View {
 
     @Environment(\.store) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppSettings.self) private var settings
     @State private var snapshot: ListSnapshot?
     @State private var loaded = false
     @State private var tab: DetailTab = .balances
@@ -85,9 +86,9 @@ struct ListDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                ShareLink(item: ShareMessageBuilder.balancesMessage(listName: snapshot.list.name,
-                                                                    balances: balances,
-                                                                    asOf: .today())) {
+                ShareLink(item: ShareMessageBuilder.balancesMessage(
+                    listName: snapshot.list.name, balances: balances, asOf: .today(),
+                    options: .init(payment: settings.paymentDetails))) {
                     Label("مشاركة الأرصدة", systemImage: "square.and.arrow.up")
                 }
             }
@@ -173,6 +174,7 @@ private struct BalancesSection: View {
     let snapshot: ListSnapshot
     let balances: ListBalances
     let onPay: (Member) -> Void
+    @State private var remindingAll = false
 
     var body: some View {
         List {
@@ -190,8 +192,22 @@ private struct BalancesSection: View {
                 ForEach(sortedRows) { row in
                     BalanceRow(row: row, listName: snapshot.list.name) { onPay(row.member) }
                 }
+            } header: {
+                HStack {
+                    Text("الأعضاء")
+                    Spacer()
+                    if balances.members.contains(where: { $0.status == .owes }) {
+                        Button {
+                            remindingAll = true
+                        } label: {
+                            Label("ذكّر الكل", systemImage: "bell.badge")
+                        }
+                        .font(.caption)
+                        .textCase(nil)
+                    }
+                }
             } footer: {
-                Text("اسحب على العضو لتسجيل سداد أو إرسال تذكير")
+                Text("اضغط على العضو لتسجيل سداد، أو اسحب لإرسال تذكير بالواتساب")
             }
 
             if !balances.unassigned.isEmpty {
@@ -205,6 +221,10 @@ private struct BalancesSection: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $remindingAll) {
+            RemindAllView(listName: snapshot.list.name,
+                          debtors: balances.members.filter { $0.status == .owes }.sorted { $0.net > $1.net })
         }
     }
 
@@ -236,6 +256,12 @@ private struct BalanceRow: View {
     let row: MemberBalance
     let listName: String
     let onPay: () -> Void
+    @Environment(AppSettings.self) private var settings
+    @Environment(\.openURL) private var openURL
+
+    private var reminder: String {
+        ShareMessageBuilder.reminderMessage(listName: listName, balance: row, payment: settings.paymentDetails)
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -262,7 +288,15 @@ private struct BalanceRow: View {
             .tint(.credit)
         }
         .swipeActions(edge: .trailing) {
-            ShareLink(item: ShareMessageBuilder.reminderMessage(listName: listName, balance: row)) {
+            if let url = WhatsApp.url(phone: row.member.phone, text: reminder) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("واتساب", systemImage: "message")
+                }
+                .tint(.green)
+            }
+            ShareLink(item: reminder) {
                 Label("تذكير", systemImage: "bell")
             }
             .tint(.orange)
@@ -276,7 +310,7 @@ private struct MealsSection: View {
     let snapshot: ListSnapshot
     @Environment(\.store) private var store
     @State private var editing: MealRecord?
-    @State private var lastDeleted: (MealRecord, [Participant])?
+    @State private var lastDeleted: (MealRecord, [Participant], [OrderLine])?
 
     var body: some View {
         List {
@@ -320,9 +354,10 @@ private struct MealsSection: View {
 
     private func delete(_ record: MealRecord) {
         let participants = snapshot.participants(of: record)
+        let lines = snapshot.orderLines(of: record)
         Task {
             try? await store.deleteMeal(id: record.id)
-            lastDeleted = (record, participants)
+            lastDeleted = (record, participants, lines)
             try? await Task.sleep(for: .seconds(5))
             if lastDeleted?.0.id == record.id { lastDeleted = nil }
         }
@@ -331,7 +366,7 @@ private struct MealsSection: View {
     private func undo() {
         guard let deleted = lastDeleted else { return }
         lastDeleted = nil
-        Task { try? await store.restoreMeal(deleted.0, participants: deleted.1) }
+        Task { try? await store.restoreMeal(deleted.0, participants: deleted.1, lines: deleted.2) }
     }
 }
 
@@ -343,7 +378,8 @@ private struct MealRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.mealName).font(.body.weight(.medium))
-                Text("\(record.day.description) · \(participants.count) حاضر")
+                Text("\(record.day.description) · \(participants.count) حاضر"
+                     + (record.splitMode == .items ? " · حسب الطلب" : ""))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !record.note.isEmpty {
@@ -443,6 +479,12 @@ private struct MemberEditor: View {
             Form {
                 TextField("الاسم", text: $member.name)
                 TextField("رمز تعبيري", text: $member.emoji)
+                TextField("رقم الجوال للتذكير بالواتساب (اختياري)", text: Binding(
+                    get: { member.phone ?? "" },
+                    set: { member.phone = $0.isEmpty ? nil : $0 }
+                ))
+                .keyboardType(.phonePad)
+                .textContentType(.telephoneNumber)
                 Toggle("يحضر عادة", isOn: $member.isDefaultAttendee)
                 Section {
                     TextField("0", text: $openingText).keyboardType(.decimalPad)

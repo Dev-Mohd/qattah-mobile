@@ -23,10 +23,13 @@ public enum ShareMessageBuilder {
     public struct Options: Sendable {
         public var includeSettled: Bool
         public var includeFooter: Bool
+        /// Bank / wallet details appended so people can pay right away.
+        public var payment: PaymentDetails?
 
-        public init(includeSettled: Bool = true, includeFooter: Bool = true) {
+        public init(includeSettled: Bool = true, includeFooter: Bool = true, payment: PaymentDetails? = nil) {
             self.includeSettled = includeSettled
             self.includeFooter = includeFooter
+            self.payment = payment
         }
     }
 
@@ -69,6 +72,10 @@ public enum ShareMessageBuilder {
         if !owes.isEmpty {
             lines.append("")
             lines.append("المجموع المطلوب: \(MoneyFormatter.plain(balances.totalOwed))")
+            if let payment = options.payment, !payment.isEmpty {
+                lines.append("")
+                lines.append(contentsOf: payment.messageLines)
+            }
         }
 
         if options.includeFooter {
@@ -79,14 +86,20 @@ public enum ShareMessageBuilder {
     }
 
     /// A short reminder for a single member.
-    public static func reminderMessage(listName: String, balance: MemberBalance) -> String {
+    public static func reminderMessage(listName: String, balance: MemberBalance,
+                                       payment: PaymentDetails? = nil) -> String {
         guard balance.status == .owes else {
             return "مرحباً \(balance.member.name) 👋\nحسابك في قطّة \(listName) مسدّد ✅"
         }
-        return """
-        مرحباً \(balance.member.name) 👋
-        المتبقي عليك في قطّة \(listName): \(MoneyFormatter.plain(balance.net))
-        شكراً لك 🙏
-        """
+        var lines = [
+            "مرحباً \(balance.member.name) 👋",
+            "المتبقي عليك في قطّة \(listName): \(MoneyFormatter.plain(balance.net))",
+        ]
+        if let payment, !payment.isEmpty {
+            lines.append("")
+            lines.append(contentsOf: payment.messageLines)
+        }
+        lines.append("شكراً لك 🙏")
+        return lines.joined(separator: "\n")
     }
 }

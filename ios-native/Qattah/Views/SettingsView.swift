@@ -29,6 +29,19 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        PaymentDetailsView()
+                    } label: {
+                        LabeledContent("بيانات التحويل",
+                                       value: settings.paymentDetails.isEmpty ? "غير مضافة" : "مضافة ✓")
+                    }
+                } header: {
+                    Text("التحصيل")
+                } footer: {
+                    Text("تظهر في رسائل التذكير والأرصدة ليحوّل لك الأعضاء مباشرة.")
+                }
+
+                Section {
                     Toggle("تذكير يومي", isOn: Binding(
                         get: { settings.reminderEnabled },
                         set: { newValue in Task { await setReminder(newValue) } }
@@ -216,5 +229,78 @@ struct AboutView: View {
         }
         .navigationTitle("عن قطّه")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The organizer's IBAN / wallet, added to reminder messages.
+struct PaymentDetailsView: View {
+    @Environment(AppSettings.self) private var settings
+    @State private var details = PaymentDetails()
+    @State private var ibanText = ""
+
+    private var ibanIsValid: Bool { ibanText.isEmpty || IBAN.isValidSaudi(ibanText) }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("اسم صاحب الحساب", text: $details.holderName)
+                    .textContentType(.name)
+                TextField("اسم البنك (مثال: الراجحي)", text: $details.bankName)
+                TextField("رقم الآيبان SA…", text: $ibanText)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .monospaced()
+                    .environment(\.layoutDirection, .leftToRight)
+                if !ibanIsValid {
+                    Label("رقم الآيبان غير صحيح. تأكد أنه يبدأ بـ SA ويتكون من 24 خانة",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("الحساب البنكي")
+            }
+
+            Section {
+                TextField("رقم الجوال المسجل في STC Pay أو المحفظة", text: $details.walletPhone)
+                    .keyboardType(.phonePad)
+            } header: {
+                Text("المحفظة")
+            }
+
+            if !details.isEmpty || !ibanText.isEmpty {
+                Section("معاينة في رسالة التذكير") {
+                    Text(previewDetails.messageLines.joined(separator: "\n"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                Text("تبقى هذه البيانات على جهازك فقط، وتُضاف للرسائل التي ترسلها أنت.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("بيانات التحويل")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            details = settings.paymentDetails
+            ibanText = details.iban.isEmpty ? "" : IBAN.grouped(details.iban)
+        }
+        .onDisappear {
+            if ibanIsValid {
+                settings.paymentDetails = previewDetails
+            }
+        }
+    }
+
+    private var previewDetails: PaymentDetails {
+        var copy = details
+        copy.holderName = copy.holderName.trimmingCharacters(in: .whitespaces)
+        copy.bankName = copy.bankName.trimmingCharacters(in: .whitespaces)
+        copy.walletPhone = copy.walletPhone.trimmingCharacters(in: .whitespaces)
+        copy.iban = IBAN.normalize(ibanText)
+        return copy
     }
 }

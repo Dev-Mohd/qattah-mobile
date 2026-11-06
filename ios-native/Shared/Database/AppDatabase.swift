@@ -128,8 +128,48 @@ final class AppDatabase: Sendable {
                 """)
         }
 
+        // Itemized meals ("each pays for what they ordered"), the list's
+        // restaurant menu, and members' phone numbers for WhatsApp reminders.
+        // Additive only: the Flutter app ignores the new tables/columns.
+        migrator.registerMigration("v3_items_menu_phone") { db in
+            func addColumn(_ table: String, _ column: String, _ definition: String) throws {
+                if try !db.columns(in: table).map(\.name).contains(column) {
+                    try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition)")
+                }
+            }
+            try addColumn("members", "phone", "TEXT")
+            try addColumn("records", "split_mode", "TEXT NOT NULL DEFAULT 'equal'")
+            try addColumn("records", "extras", "REAL NOT NULL DEFAULT 0")
+
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS menu_items (
+                  id TEXT PRIMARY KEY NOT NULL,
+                  list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+                  name TEXT NOT NULL,
+                  price REAL NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL DEFAULT '',
+                  updated_at TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_menu_items_list ON menu_items(list_id);
+                CREATE TABLE IF NOT EXISTS record_items (
+                  id TEXT PRIMARY KEY NOT NULL,
+                  record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+                  member_id TEXT REFERENCES members(id) ON DELETE SET NULL,
+                  item_name TEXT NOT NULL,
+                  unit_price REAL NOT NULL DEFAULT 0,
+                  quantity INTEGER NOT NULL DEFAULT 1,
+                  created_at TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_record_items_record ON record_items(record_id);
+                """)
+        }
+
         return migrator
     }
+
+    /// Every table, in insertion order (parents first) — used by backups.
+    static let allTables = ["lists", "members", "meal_types", "menu_items", "records",
+                            "record_participants", "record_items", "payments"]
 }
 
 /// The original Flutter schema, column for column.
