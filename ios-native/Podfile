@@ -1,5 +1,8 @@
 platform :ios, '17.0'
 use_frameworks! :linkage => :static
+# Silence warnings inside third-party code (SQLCipher's C sources, GRDB);
+# warnings in our own code still show.
+inhibit_all_warnings!
 
 # GRDB with SQLCipher: the same encryption library (SQLCipher 4) the Flutter
 # app used through sqflite_sqlcipher, so the existing database opens as-is.
@@ -16,6 +19,8 @@ target 'Qattah' do
 end
 
 post_install do |installer|
+  # Stop Xcode's "Update to recommended settings" prompt for the Pods project.
+  installer.pods_project.root_object.attributes['LastUpgradeCheck'] = '2650'
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '17.0'

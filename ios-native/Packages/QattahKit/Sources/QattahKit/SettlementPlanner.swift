@@ -10,6 +10,14 @@ public struct Transfer: Hashable, Identifiable, Sendable {
     public let toId: String?
     public let toName: String
     public let amount: Money
+
+    public init(fromId: String, fromName: String, toId: String?, toName: String, amount: Money) {
+        self.fromId = fromId
+        self.fromName = fromName
+        self.toId = toId
+        self.toName = toName
+        self.amount = amount
+    }
 }
 
 /// Works out who should pay whom so that every balance goes to zero, with

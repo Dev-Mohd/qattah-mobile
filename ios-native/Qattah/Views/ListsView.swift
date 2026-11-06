@@ -399,7 +399,8 @@ struct AppearEffect: ViewModifier {
 
 /// Slight shrink while pressed.
 struct PressableCardStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
+    // Spelled out: GRDB (imported in this file) also has a type named `Configuration`.
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
