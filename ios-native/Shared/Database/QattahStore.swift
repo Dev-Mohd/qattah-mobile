@@ -174,13 +174,14 @@ final class QattahStore: Sendable {
     func saveList(_ list: QattahList) async throws {
         try await database.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO lists (id, name, color, icon, is_archived, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO lists (id, name, color, icon, is_archived, organizer_member_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   name = excluded.name, color = excluded.color, icon = excluded.icon,
-                  is_archived = excluded.is_archived, updated_at = excluded.updated_at
+                  is_archived = excluded.is_archived, organizer_member_id = excluded.organizer_member_id,
+                  updated_at = excluded.updated_at
                 """, arguments: [list.id, list.name, list.color, list.icon, list.isArchived ? 1 : 0,
-                                 DBDate.string(list.createdAt), DBDate.string(.now)])
+                                 list.organizerId, DBDate.string(list.createdAt), DBDate.string(.now)])
         }
     }
 
@@ -429,6 +430,21 @@ final class QattahStore: Sendable {
                 """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
                                  payment.amount.riyals, payment.note, payment.paidOn.description,
                                  DBDate.string(payment.createdAt), DBDate.string(.now)])
+        }
+    }
+
+    /// Saves several payments in one transaction (e.g. both sides of a transfer).
+    func savePayments(_ payments: [Payment]) async throws {
+        try await database.writer.write { db in
+            for payment in payments {
+                try db.execute(sql: """
+                    INSERT INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
+                                          record_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
+                                     payment.amount.riyals, payment.note, payment.paidOn.description,
+                                     payment.recordId, DBDate.string(payment.createdAt), DBDate.string(.now)])
+            }
         }
     }
 

@@ -76,6 +76,7 @@ extension QattahList {
                   color: row.string("color", default: "#2563EB"),
                   icon: row.optionalString("icon"),
                   isArchived: row.bool("is_archived", default: false),
+                  organizerId: row.optionalString("organizer_member_id"),
                   createdAt: row.date("created_at"),
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }

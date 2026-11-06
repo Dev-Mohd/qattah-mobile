@@ -170,6 +170,8 @@ private struct BalancesSection: View {
     let onPay: (Member) -> Void
     let onOpen: (Member) -> Void
     @State private var remindingAll = false
+    @State private var showingSettlement = false
+    @State private var showingPaste = false
 
     var body: some View {
         List {
@@ -178,6 +180,21 @@ private struct BalancesSection: View {
                     SummaryTile(title: "مستحق", money: balances.totalOwed, color: .owes)
                     SummaryTile(title: "رصيد دائن", money: balances.totalCredit, color: .credit)
                     SummaryTile(title: "مجموع المصروف", money: balances.totalSpent, color: .primary)
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            }
+
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        QuickAction(title: "خطة التسوية", symbol: "arrow.left.arrow.right") { showingSettlement = true }
+                        QuickAction(title: "من رسالة البنك", symbol: "text.viewfinder") { showingPaste = true }
+                        if balances.members.contains(where: { $0.status == .owes }) {
+                            QuickAction(title: "ذكّر الكل", symbol: "bell.badge") { remindingAll = true }
+                        }
+                    }
+                    .padding(.horizontal, 2)
                 }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -226,6 +243,8 @@ private struct BalancesSection: View {
                 }
             }
         }
+        .sheet(isPresented: $showingSettlement) { SettlementView(snapshot: snapshot) }
+        .sheet(isPresented: $showingPaste) { PasteBankMessageView(snapshot: snapshot) }
         .sheet(isPresented: $remindingAll) {
             RemindAllView(snapshot: snapshot,
                           debtors: balances.members.filter { $0.status == .owes }.sorted { $0.net > $1.net })
@@ -710,5 +729,27 @@ private struct BalancesChart: View {
             withAnimation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.1)) { appeared = true }
         }
         .accessibilityLabel("رسم بياني للأرصدة")
+    }
+}
+
+/// Capsule shortcut button under the balances summary.
+private struct QuickAction: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.qattahAccent.opacity(0.12), in: Capsule())
+                .foregroundStyle(Color.qattahAccent)
+        }
+        .buttonStyle(PressableCardStyle())
     }
 }

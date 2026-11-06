@@ -178,6 +178,13 @@ final class AppDatabase: Sendable {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_payments_record ON payments(record_id)")
         }
 
+        // Which member runs the pot (for the settlement plan).
+        migrator.registerMigration("v5_list_organizer") { db in
+            if try !db.columns(in: "lists").map(\.name).contains("organizer_member_id") {
+                try db.execute(sql: "ALTER TABLE lists ADD COLUMN organizer_member_id TEXT")
+            }
+        }
+
         return migrator
     }
 

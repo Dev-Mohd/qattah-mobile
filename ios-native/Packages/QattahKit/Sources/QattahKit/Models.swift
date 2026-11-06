@@ -11,17 +11,20 @@ public struct QattahList: Identifiable, Hashable, Sendable {
     public var color: String
     public var icon: String?
     public var isArchived: Bool
+    /// The member who runs the pot (receives the money). nil = someone outside the list.
+    public var organizerId: String?
     public var createdAt: Date
     public var updatedAt: Date
 
     public init(id: String = UUID().uuidString.lowercased(), name: String, color: String = "#10B981",
-                icon: String? = nil, isArchived: Bool = false,
+                icon: String? = nil, isArchived: Bool = false, organizerId: String? = nil,
                 createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.name = name
         self.color = color
         self.icon = icon
         self.isArchived = isArchived
+        self.organizerId = organizerId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
