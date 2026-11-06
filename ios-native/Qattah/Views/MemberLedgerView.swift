@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import QattahKit
 
 /// Everything about one member: balance, payments (edit / delete with undo)
@@ -15,6 +16,7 @@ struct MemberLedgerView: View {
     @State private var addingPayment = false
     @State private var editingPayment: Payment?
     @State private var lastDeleted: Payment?
+    @State private var statementURL: URL?
 
     private var member: Member? { snapshot?.members.first { $0.id == memberId } }
     private var balance: MemberBalance? { snapshot?.balances.members.first { $0.id == memberId } }
@@ -80,6 +82,13 @@ struct MemberLedgerView: View {
                 } label: {
                     Label("تسجيل سداد", systemImage: "banknote")
                 }
+                Button {
+                    statementURL = try? MemberStatementRenderer.render(snapshot: snapshot, member: member,
+                                                                       balance: balance,
+                                                                       payment: settings.paymentDetails)
+                } label: {
+                    Label("إرسال كشف حساب PDF", systemImage: "doc.richtext")
+                }
                 if balance.status == .owes {
                     if let url = WhatsApp.url(phone: member.phone, text: reminder) {
                         Button { openURL(url) } label: {
@@ -89,6 +98,14 @@ struct MemberLedgerView: View {
                     ShareLink(item: reminder) {
                         Label("إرسال تذكير", systemImage: "bell")
                     }
+                }
+            }
+
+            if meals.count > 1 {
+                Section("مصروفه في آخر 6 أشهر") {
+                    MemberMonthsChart(meals: meals)
+                        .frame(height: 150)
+                        .padding(.vertical, 6)
                 }
             }
 
@@ -127,6 +144,9 @@ struct MemberLedgerView: View {
                     }
                 }
             }
+        }
+        .sheet(item: Binding(get: { statementURL.map(ShareItem.init) }, set: { statementURL = $0?.url })) { item in
+            ShareSheet(items: [item.url, reminder])
         }
         .sheet(isPresented: $addingPayment) {
             AddPaymentView(member: member, balance: balance)
@@ -185,6 +205,38 @@ private struct PaymentRow: View {
             }
             Spacer()
             MoneyText(money: payment.amount, weight: .semibold).foregroundStyle(Color.credit)
+        }
+    }
+}
+
+struct ShareItem: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+private struct MemberMonthsChart: View {
+    let meals: [(record: MealRecord, share: Money)]
+    @State private var appeared = false
+
+    private var months: [(month: Month, total: Money)] {
+        var list = [Month.current()]
+        while list.count < 6 { list.insert(list[0].previous, at: 0) }
+        return list.map { month in
+            (month: month, total: meals.filter { month.contains($0.record.day) }.map(\.share).sum())
+        }
+    }
+
+    var body: some View {
+        Chart(months, id: \.month) { item in
+            BarMark(x: .value("الشهر", item.month.arabicTitle.components(separatedBy: " ").first ?? ""),
+                    y: .value("المبلغ", appeared ? item.total.riyals : 0))
+                .foregroundStyle(item.month == Month.current() ? Color.qattahAccent.gradient
+                                                                : Color.qattahAccent.opacity(0.45).gradient)
+                .cornerRadius(6)
+        }
+        .chartYAxis(.hidden)
+        .onAppear {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) { appeared = true }
         }
     }
 }

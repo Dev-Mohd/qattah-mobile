@@ -6,21 +6,36 @@ import QattahKit
 struct QattahApp: App {
     @State private var boot = AppBootstrap()
     @State private var settings = AppSettings()
+    @State private var showSplash = true
+    @State private var toaster = Toaster()
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                switch boot.state {
-                case .loading:
-                    ProgressView()
-                case .ready(let store):
-                    RootView()
-                        .environment(\.store, store)
-                case .failed(let error):
-                    RecoveryView(error: error) { boot.startFresh() }
+            ZStack {
+                Group {
+                    switch boot.state {
+                    case .loading:
+                        Color.clear
+                    case .ready(let store):
+                        RootView(splashFinished: !showSplash)
+                            .environment(\.store, store)
+                    case .failed(let error):
+                        RecoveryView(error: error) { boot.startFresh() }
+                    }
+                }
+
+                ToastOverlay()
+
+                if showSplash {
+                    SplashView {
+                        withAnimation(.easeInOut(duration: 0.45)) { showSplash = false }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 1.08)))
+                    .zIndex(1)
                 }
             }
             .environment(settings)
+            .environment(toaster)
             .environment(\.layoutDirection, .rightToLeft)
             .environment(\.locale, Locale(identifier: "ar_SA"))
             .preferredColorScheme(settings.appearance.colorScheme)
@@ -33,6 +48,8 @@ struct QattahApp: App {
 /// Home screen plus app-wide behaviour: onboarding, and keeping the daily
 /// reminder, the widget and Siri suggestions in sync with the data.
 private struct RootView: View {
+    /// Onboarding waits for the launch animation to finish.
+    let splashFinished: Bool
     @Environment(\.store) private var store
     @Environment(AppSettings.self) private var settings
     @Environment(\.scenePhase) private var scenePhase
@@ -41,7 +58,7 @@ private struct RootView: View {
     var body: some View {
         ListsView()
             .fullScreenCover(isPresented: Binding(
-                get: { !settings.onboardingSeen },
+                get: { splashFinished && !settings.onboardingSeen },
                 set: { if !$0 { settings.onboardingSeen = true } }
             )) {
                 OnboardingView { settings.onboardingSeen = true }

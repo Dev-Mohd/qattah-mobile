@@ -9,6 +9,7 @@ struct AddPaymentView: View {
 
     @Environment(\.store) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(Toaster.self) private var toaster
     @State private var amountText = ""
     @State private var paidOn = Date.now
     @State private var note = ""
@@ -99,6 +100,7 @@ struct AddPaymentView: View {
             do {
                 try await store.savePayment(payment)
                 Haptics.success()
+                toaster.show("سُجّل سداد \(member.name) \(MoneyFormatter.plain(amount))", symbol: "banknote.fill")
                 dismiss()
             } catch {
                 saving = false

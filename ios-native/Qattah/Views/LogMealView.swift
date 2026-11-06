@@ -14,6 +14,7 @@ struct LogMealView: View {
 
     @Environment(\.store) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(Toaster.self) private var toaster
 
     @State private var mealTypeId: String?
     @State private var day = Date.now
@@ -340,6 +341,8 @@ struct LogMealView: View {
                     Spacer()
                     MoneyText(money: SplitCalculator.perPerson(total, attendeeCount: peopleCount),
                               font: .title3, weight: .bold)
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: peopleCount)
                 } else {
                     Text("الإجمالي")
                     Spacer()
@@ -547,6 +550,7 @@ struct LogMealView: View {
                     try await store.saveMeal(record, attendees: people, guests: currentGuests, payer: payer)
                 }
                 Haptics.success()
+                toaster.show(editing == nil ? "سُجّلت \(record.mealName) ✓" : "حُفظت التعديلات")
                 dismiss()
             } catch {
                 saving = false
@@ -574,14 +578,20 @@ private struct AttendeeRow: View {
                     Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
                         .foregroundStyle(isOn ? Color.qattahAccent : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: isOn)
                     Text(member.emoji)
                     Text(member.name).foregroundStyle(.primary)
                     Spacer()
                     if let share {
-                        MoneyText(money: share, font: .subheadline).foregroundStyle(.secondary)
+                        MoneyText(money: share, font: .subheadline)
+                            .foregroundStyle(.secondary)
+                            .contentTransition(.numericText(value: share.riyals))
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
                 }
                 .contentShape(Rectangle())
+                .animation(.snappy, value: share)
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(isOn ? .isSelected : [])

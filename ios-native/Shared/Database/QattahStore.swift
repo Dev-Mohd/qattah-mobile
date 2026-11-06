@@ -63,7 +63,16 @@ struct ListSummary: Identifiable, Sendable {
     var memberCount: Int
     var totalOwed: Money
     var lastMealDay: Day?
+    /// Spending this calendar month.
+    var monthSpent: Money = .zero
+    var monthMeals: Int = 0
+    /// Spending for each of the last 14 days, oldest first (for the sparkline).
+    var recentDaily: [Money] = []
+    /// Biggest debtor's name, for a hint on the card.
+    var topDebtor: String?
     var id: String { list.id }
+
+    var loggedToday: Bool { lastMealDay == .today() }
 }
 
 /// Reads and writes app data.
@@ -104,10 +113,23 @@ final class QattahStore: Sendable {
             guard let snapshot = try fetchSnapshot(db, listId: list.id) else {
                 return ListSummary(list: list, memberCount: 0, totalOwed: .zero, lastMealDay: nil)
             }
+            let balances = snapshot.balances
+            let month = Month.current()
+            let monthRecords = snapshot.records.filter { month.contains($0.day) }
+            let calendar = Calendar.current
+            let byDay = Dictionary(grouping: snapshot.records, by: \.day).mapValues { $0.map(\.totalAmount).sum() }
+            let recent = (0..<14).reversed().map { offset -> Money in
+                let date = calendar.date(byAdding: .day, value: -offset, to: .now) ?? .now
+                return byDay[Day(date, calendar: calendar)] ?? .zero
+            }
             return ListSummary(list: list,
                                memberCount: snapshot.members.filter(\.isActive).count,
-                               totalOwed: snapshot.balances.totalOwed,
-                               lastMealDay: snapshot.records.map(\.day).max())
+                               totalOwed: balances.totalOwed,
+                               lastMealDay: snapshot.records.map(\.day).max(),
+                               monthSpent: monthRecords.map(\.totalAmount).sum(),
+                               monthMeals: monthRecords.count,
+                               recentDaily: recent,
+                               topDebtor: balances.members.filter { $0.net.isPositive }.max { $0.net < $1.net }?.member.name)
         }
     }
 

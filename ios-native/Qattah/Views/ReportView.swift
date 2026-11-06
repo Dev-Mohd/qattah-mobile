@@ -9,6 +9,7 @@ struct ReportView: View {
     @State private var month = Month.current()
     @State private var pdfURL: URL?
     @State private var pdfError: String?
+    @State private var chartAppeared = false
 
     private var report: MonthlyReport {
         MonthlyReportBuilder.build(month: month, members: snapshot.members, records: snapshot.records,
@@ -45,9 +46,12 @@ struct ReportView: View {
                 Section("المصروف اليومي") {
                     Chart(report.dailySpending, id: \.day) { item in
                         BarMark(x: .value("اليوم", item.day.day),
-                                y: .value("المبلغ", item.amount.riyals))
+                                y: .value("المبلغ", chartAppeared ? item.amount.riyals : 0))
                             .foregroundStyle(Color.qattahAccent.gradient)
                             .cornerRadius(4)
+                    }
+                    .onAppear {
+                        withAnimation(.spring(response: 0.9, dampingFraction: 0.85)) { chartAppeared = true }
                     }
                     .chartXScale(domain: 1...31)
                     .chartXAxis {
@@ -70,14 +74,48 @@ struct ReportView: View {
 
             if report.spendingByMeal.count > 1 {
                 Section("حسب نوع الوجبة") {
-                    ForEach(report.spendingByMeal, id: \.name) { item in
-                        HStack {
-                            Text(item.name)
-                            Text("\(item.count) وجبة").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            MoneyText(money: item.amount)
+                    Chart(Array(report.spendingByMeal.enumerated()), id: \.element.name) { item in
+                        SectorMark(angle: .value("المبلغ", chartAppeared ? item.element.amount.riyals : 0.001),
+                                   innerRadius: .ratio(0.62), angularInset: 2)
+                            .foregroundStyle(ReportPalette.color(item.offset))
+                            .cornerRadius(5)
+                    }
+                    .chartLegend(.hidden)
+                    .chartBackground { _ in
+                        VStack(spacing: 2) {
+                            Text("المجموع").font(.caption).foregroundStyle(.secondary)
+                            MoneyText(money: report.totalSpent, font: .headline, weight: .bold)
                         }
                     }
+                    .frame(height: 190)
+                    .padding(.vertical, 8)
+
+                    ForEach(Array(report.spendingByMeal.enumerated()), id: \.element.name) { item in
+                        HStack {
+                            Circle().fill(ReportPalette.color(item.offset)).frame(width: 10, height: 10)
+                            Text(item.element.name)
+                            Text("\(item.element.count) وجبة").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            MoneyText(money: item.element.amount)
+                        }
+                    }
+                }
+            }
+
+            if report.members.count > 1 && report.totalSpent.isPositive {
+                Section("نصيب الأعضاء من مصروف الشهر") {
+                    Chart(report.members.filter { $0.spent.isPositive }) { stat in
+                        BarMark(x: .value("المصروف", chartAppeared ? stat.spent.riyals : 0),
+                                y: .value("العضو", stat.member.name))
+                            .foregroundStyle(Color.qattahAccent.gradient)
+                            .cornerRadius(5)
+                            .annotation(position: .trailing) {
+                                Text(MoneyFormatter.number(stat.spent)).font(.caption2).foregroundStyle(.secondary)
+                            }
+                    }
+                    .chartXAxis(.hidden)
+                    .frame(height: CGFloat(report.members.filter { $0.spent.isPositive }.count) * 28 + 10)
+                    .padding(.vertical, 6)
                 }
             }
         }
@@ -220,4 +258,11 @@ private struct MemberStatRow: View {
     private func detail(_ title: String, money: Money) -> some View {
         HStack(spacing: 3) { Text(title); Text(MoneyFormatter.number(money)).monospacedDigit() }
     }
+}
+
+enum ReportPalette {
+    static let colors: [Color] = [.qattahAccent, Color(hex: "#0EA5E9"), Color(hex: "#F59E0B"),
+                                  Color(hex: "#8B5CF6"), Color(hex: "#EC4899"), Color(hex: "#14B8A6")]
+
+    static func color(_ index: Int) -> Color { colors[index % colors.count] }
 }

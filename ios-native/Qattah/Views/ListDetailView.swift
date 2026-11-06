@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import GRDB
 import QattahKit
 
@@ -14,8 +15,7 @@ struct ListDetailView: View {
     @State private var showingLogMeal = false
     @State private var paymentMember: Member?
     @State private var ledgerMember: Member?
-    @State private var renaming = false
-    @State private var newName = ""
+    @State private var editingList: QattahList?
     @State private var confirmDelete = false
     @State private var errorMessage: String?
 
@@ -96,10 +96,9 @@ struct ListDetailView: View {
             }
             ToolbarItem(placement: .secondaryAction) {
                 Button {
-                    newName = snapshot.list.name
-                    renaming = true
+                    editingList = snapshot.list
                 } label: {
-                    Label("تعديل الاسم", systemImage: "pencil")
+                    Label("تعديل القائمة", systemImage: "pencil")
                 }
             }
             ToolbarItem(placement: .secondaryAction) {
@@ -120,10 +119,8 @@ struct ListDetailView: View {
             AddPaymentView(member: member,
                            balance: balances.members.first { $0.id == member.id })
         }
-        .alert("تعديل اسم القائمة", isPresented: $renaming) {
-            TextField("الاسم", text: $newName)
-            Button("حفظ") { rename(snapshot.list) }
-            Button("إلغاء", role: .cancel) {}
+        .sheet(item: $editingList) { list in
+            ListEditorView(list: list)
         }
         .confirmationDialog("سيتم حذف القائمة «\(snapshot.list.name)» مع كل أعضائها ووجباتها وسداداتها",
                             isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -151,14 +148,6 @@ struct ListDetailView: View {
         .controlSize(.large)
         .padding(.horizontal)
         .padding(.bottom, 8)
-    }
-
-    private func rename(_ list: QattahList) {
-        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        var updated = list
-        updated.name = name
-        Task { try? await store.saveList(updated) }
     }
 
     private func delete(_ list: QattahList) {
@@ -192,6 +181,14 @@ private struct BalancesSection: View {
                 }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+            }
+
+            if chartRows.count > 1 {
+                Section("من عليه ومن له") {
+                    BalancesChart(rows: chartRows)
+                        .frame(height: CGFloat(chartRows.count) * 30 + 16)
+                        .padding(.vertical, 6)
+                }
             }
 
             Section {
@@ -230,9 +227,13 @@ private struct BalancesSection: View {
             }
         }
         .sheet(isPresented: $remindingAll) {
-            RemindAllView(listName: snapshot.list.name,
+            RemindAllView(snapshot: snapshot,
                           debtors: balances.members.filter { $0.status == .owes }.sorted { $0.net > $1.net })
         }
+    }
+
+    private var chartRows: [MemberBalance] {
+        sortedRows.filter { !$0.net.isZero }.prefix(10).map { $0 }
     }
 
     /// Debtors first (largest first), then settled, then creditors.
@@ -251,7 +252,10 @@ private struct SummaryTile: View {
     var body: some View {
         VStack(spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            MoneyText(money: money, font: .headline, weight: .bold).foregroundStyle(color)
+            MoneyText(money: money, font: .headline, weight: .bold)
+                .foregroundStyle(color)
+                .contentTransition(.numericText(value: money.riyals))
+                .animation(.snappy, value: money)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -319,6 +323,7 @@ private struct MealsSection: View {
     @Environment(\.store) private var store
     @State private var editing: MealRecord?
     @State private var lastDeleted: (MealRecord, [Participant], [OrderLine], [Payment])?
+    @Environment(Toaster.self) private var toaster
     @State private var query = ""
     @State private var memberFilter: String?
 
@@ -361,6 +366,23 @@ private struct MealsSection: View {
                                 payer: snapshot.billPayment(of: record)?.memberName)
                             .contentShape(Rectangle())
                             .onTapGesture { editing = record }
+                            .contextMenu {
+                                Button { editing = record } label: { Label("تعديل", systemImage: "pencil") }
+                                Button { repeatToday(record) } label: {
+                                    Label("كرّرها اليوم", systemImage: "arrow.clockwise")
+                                }
+                                .disabled(record.day == .today())
+                                Divider()
+                                Button(role: .destructive) { delete(record) } label: {
+                                    Label("حذف", systemImage: "trash")
+                                }
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button { repeatToday(record) } label: {
+                                    Label("كرّر اليوم", systemImage: "arrow.clockwise")
+                                }
+                                .tint(.qattahAccent)
+                            }
                             .swipeActions {
                                 Button(role: .destructive) { delete(record) } label: {
                                     Label("حذف", systemImage: "trash")
@@ -409,6 +431,33 @@ private struct MealsSection: View {
             lastDeleted = (record, participants, lines, payments)
             try? await Task.sleep(for: .seconds(5))
             if lastDeleted?.0.id == record.id { lastDeleted = nil }
+        }
+    }
+
+    /// Logs the same meal again today: same people, same split (and the same
+    /// order for itemized meals). The bill payer is not copied.
+    private func repeatToday(_ record: MealRecord) {
+        let attendeeIds = Set(snapshot.participants(of: record).filter { !$0.isGuest }.compactMap(\.memberId))
+        let attendees = snapshot.members.filter { attendeeIds.contains($0.id) && $0.isActive }
+        guard !attendees.isEmpty else { return }
+        var copy = record
+        copy.id = UUID().uuidString.lowercased()
+        copy.day = .today()
+        copy.createdAt = .now
+        copy.note = ""
+        let lines = snapshot.orderLines(of: record).map {
+            OrderLine(recordId: copy.id, memberId: $0.memberId, itemName: $0.itemName,
+                      unitPrice: $0.unitPrice, quantity: $0.quantity)
+        }
+        let guests = snapshot.guests(of: record)
+        Task {
+            if record.splitMode == .items {
+                try? await store.saveItemizedMeal(copy, attendees: attendees, lines: lines, extras: record.extras)
+            } else {
+                try? await store.saveMeal(copy, attendees: attendees, guests: guests)
+            }
+            Haptics.success()
+            toaster.show("كُرّرت \(record.mealName) اليوم ✓", symbol: "arrow.clockwise.circle.fill")
         }
     }
 
@@ -634,5 +683,32 @@ private struct MealTypeEditor: View {
             .onAppear { priceText = AmountParser.text(from: mealType.defaultPrice) }
         }
         .presentationDetents([.medium])
+    }
+}
+
+/// Horizontal bars: debts to one side (red), credits to the other (green).
+private struct BalancesChart: View {
+    let rows: [MemberBalance]
+    @State private var appeared = false
+
+    var body: some View {
+        Chart(rows) { row in
+            BarMark(x: .value("الرصيد", appeared ? row.net.riyals : 0),
+                    y: .value("العضو", row.member.name))
+                .foregroundStyle(row.net.isPositive ? Color.owes.gradient : Color.credit.gradient)
+                .cornerRadius(6)
+                .annotation(position: row.net.isPositive ? .trailing : .leading, spacing: 4) {
+                    Text(MoneyFormatter.number(row.net.magnitude))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .opacity(appeared ? 1 : 0)
+                }
+        }
+        .chartXAxis(.hidden)
+        .chartLegend(.hidden)
+        .onAppear {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.1)) { appeared = true }
+        }
+        .accessibilityLabel("رسم بياني للأرصدة")
     }
 }
