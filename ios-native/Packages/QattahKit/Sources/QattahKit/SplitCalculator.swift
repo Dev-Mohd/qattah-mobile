@@ -66,4 +66,10 @@ public struct GuestAwareShare: Hashable, Sendable {
     public let memberId: String
     public let guestName: String?
     public let share: Money
+
+    public init(memberId: String, guestName: String?, share: Money) {
+        self.memberId = memberId
+        self.guestName = guestName
+        self.share = share
+    }
 }
