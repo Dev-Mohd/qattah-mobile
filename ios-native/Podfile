@@ -1,0 +1,24 @@
+platform :ios, '17.0'
+use_frameworks! :linkage => :static
+
+# GRDB with SQLCipher: the same encryption library (SQLCipher 4) the Flutter
+# app used through sqflite_sqlcipher, so the existing database opens as-is.
+# GRDB.swift/SQLCipher must be the ONLY GRDB/SQLite pod in the project.
+target 'Qattah' do
+  # GRDB 7 is not published on CocoaPods trunk (CocoaPods issue #11839, see
+  # GRDB's README), so it is pulled from GitHub at a pinned tag.
+  pod 'GRDB.swift/SQLCipher', :git => 'https://github.com/groue/GRDB.swift.git', :tag => 'v7.12.0'
+  pod 'SQLCipher', '~> 4.10'
+
+  target 'QattahTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '17.0'
+    end
+  end
+end
