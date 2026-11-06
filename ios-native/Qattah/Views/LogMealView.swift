@@ -25,6 +25,12 @@ struct LogMealView: View {
     @State private var lines: [OrderLine] = []
     @State private var extrasText = ""
     @State private var picking: PickTarget?
+    @State private var guests: [Guest] = []
+    @State private var addingGuest = false
+    @State private var newGuestName = ""
+    @State private var newGuestHost: String?
+    /// Member who paid the restaurant (gets a linked payment). nil = not paid by a member.
+    @State private var payerId: String?
     @State private var note = ""
     @State private var hint: String?
     @State private var saving = false
@@ -109,9 +115,15 @@ struct LogMealView: View {
                     if let hint { Text(hint) }
                 }
 
+                if splitMode == .equal {
+                    guestsSection
+                }
+
                 if splitMode == .items {
                     itemsSections
                 }
+
+                payerSection
 
                 Section("ملاحظة") {
                     TextField("اختياري", text: $note, axis: .vertical)
@@ -187,6 +199,76 @@ struct LogMealView: View {
         }
     }
 
+    private var guestsSection: some View {
+        Section {
+            ForEach(guests) { guest in
+                HStack {
+                    Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(.secondary)
+                    Text(guest.name)
+                    Spacer()
+                    Text("على \(memberName(guest.hostId))").font(.caption).foregroundStyle(.secondary)
+                }
+                .opacity(attendees.contains(guest.hostId) ? 1 : 0.4)
+                .swipeActions {
+                    Button(role: .destructive) {
+                        guests.removeAll { $0.id == guest.id }
+                        recomputeTotal()
+                    } label: { Label("حذف", systemImage: "trash") }
+                }
+            }
+            Button {
+                newGuestName = ""
+                newGuestHost = orderedAttendees.first?.id
+                addingGuest = true
+            } label: {
+                Label("إضافة ضيف", systemImage: "person.badge.plus")
+            }
+            .disabled(attendees.isEmpty)
+        } header: {
+            Text("ضيوف")
+        } footer: {
+            Text("الضيف يُحسب في التقسيم ونصيبه على العضو الذي دعاه، بدون أن يُضاف للأعضاء.")
+        }
+        .alert("ضيف لمرة واحدة", isPresented: $addingGuest) {
+            TextField("اسم الضيف", text: $newGuestName)
+            ForEach(orderedAttendees) { member in
+                Button("على حساب \(member.name)") { addGuest(host: member.id) }
+            }
+            Button("إلغاء", role: .cancel) {}
+        } message: {
+            Text("اكتب اسم الضيف ثم اختر من يدفع عنه")
+        }
+    }
+
+    private var payerSection: some View {
+        Section {
+            Picker("من دفع للمطعم؟", selection: $payerId) {
+                Text("لم يدفع أحد من الأعضاء").tag(String?.none)
+                ForEach(activeMembers) { member in
+                    Text(member.name).tag(Optional(member.id))
+                }
+            }
+        } footer: {
+            if let payerId, total.isPositive {
+                Text("سيُسجَّل لـ \(memberName(payerId)) سداد بقيمة \(MoneyFormatter.plain(total)) مرتبط بهذه الوجبة.")
+            } else {
+                Text("إذا دفع أحد الأعضاء الحساب من جيبه يُحسب له كسداد تلقائياً.")
+            }
+        }
+    }
+
+    private func memberName(_ id: String) -> String {
+        snapshot.members.first { $0.id == id }?.name ?? "عضو"
+    }
+
+    private func addGuest(host: String) {
+        let name = newGuestName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        Haptics.tap()
+        guests.append(Guest(name: name, hostId: host))
+        recomputeTotal()
+    }
+
     @ViewBuilder
     private var itemsSections: some View {
         Section {
@@ -256,7 +338,7 @@ struct LogMealView: View {
                 if splitMode == .equal {
                     Text("نصيب الشخص")
                     Spacer()
-                    MoneyText(money: SplitCalculator.perPerson(total, attendeeCount: attendees.count),
+                    MoneyText(money: SplitCalculator.perPerson(total, attendeeCount: peopleCount),
                               font: .title3, weight: .bold)
                 } else {
                     Text("الإجمالي")
@@ -275,6 +357,13 @@ struct LogMealView: View {
 
     private var canSave: Bool { !saving && !attendees.isEmpty && total.isPositive }
 
+    /// Guests whose host is still ticked.
+    private var activeGuests: [Guest] {
+        guests.filter { attendees.contains($0.hostId) }
+    }
+
+    private var peopleCount: Int { attendees.count + activeGuests.count }
+
     private var totalEditedByHand: Bool { totalText != autoTotalText }
 
     private var restaurantOrderMessage: String {
@@ -289,8 +378,9 @@ struct LogMealView: View {
         guard attendees.contains(member.id), total.isPositive else { return nil }
         switch splitMode {
         case .equal:
-            return SplitCalculator.split(total, among: orderedAttendees.map(\.id))
-                .first { $0.id == member.id }?.share
+            let shares = SplitCalculator.splitWithGuests(total, attendeeIds: orderedAttendees.map(\.id),
+                                                         guests: activeGuests)
+            return shares.filter { $0.memberId == member.id }.map(\.share).sum()
         case .items:
             return itemSplit.shares.first { $0.id == member.id }?.share
         }
@@ -371,7 +461,7 @@ struct LogMealView: View {
     private func recomputeTotal() {
         guard splitMode == .equal, !totalEditedByHand,
               let price = selectedType?.defaultPrice, price.isPositive else { return }
-        setAutoTotal(price * attendees.count)
+        setAutoTotal(price * peopleCount)
     }
 
     // MARK: - Loading & saving
@@ -388,6 +478,8 @@ struct LogMealView: View {
             totalText = AmountParser.text(from: editing.totalAmount)
             autoTotalText = "\u{0}" // treat the saved total as typed by hand
             lines = snapshot.orderLines(of: editing)
+            guests = snapshot.guests(of: editing)
+            payerId = snapshot.billPayment(of: editing)?.memberId
             extrasText = AmountParser.text(from: editing.extras)
             note = editing.note
             return
@@ -444,12 +536,15 @@ struct LogMealView: View {
         let mode = splitMode
         let currentLines = lines
         let currentExtras = extras
+        let currentGuests = activeGuests
+        let payer = snapshot.members.first { $0.id == payerId }
         Task {
             do {
                 if mode == .items {
-                    try await store.saveItemizedMeal(record, attendees: people, lines: currentLines, extras: currentExtras)
+                    try await store.saveItemizedMeal(record, attendees: people, lines: currentLines,
+                                                     extras: currentExtras, payer: payer)
                 } else {
-                    try await store.saveMeal(record, attendees: people)
+                    try await store.saveMeal(record, attendees: people, guests: currentGuests, payer: payer)
                 }
                 Haptics.success()
                 dismiss()

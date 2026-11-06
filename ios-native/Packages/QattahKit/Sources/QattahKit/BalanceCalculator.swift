@@ -63,14 +63,17 @@ public enum BalanceCalculator {
         let membersByName = Dictionary(grouping: members, by: { normalize($0.name) })
 
         var spent: [String: Money] = [:]
-        var meals: [String: Int] = [:]
+        var mealsAttended: [String: Set<String>] = [:]
         var unassigned: [String: Money] = [:]
 
         for participant in participants where recordIds.contains(participant.recordId) {
             if let owner = resolveOwner(memberId: participant.memberId, name: participant.memberName,
                                         memberIds: memberIds, membersByName: membersByName) {
                 spent[owner, default: .zero] += participant.share
-                meals[owner, default: 0] += 1
+                // A guest's share goes to the host but is not a meal the host attended twice.
+                if !participant.isGuest {
+                    mealsAttended[owner, default: []].insert(participant.recordId)
+                }
             } else {
                 unassigned[participant.memberName, default: .zero] += participant.share
             }
@@ -92,7 +95,7 @@ public enum BalanceCalculator {
                 openingBalance: member.openingBalance,
                 spent: spent[member.id] ?? .zero,
                 paid: paid[member.id] ?? .zero,
-                mealCount: meals[member.id] ?? 0
+                mealCount: mealsAttended[member.id]?.count ?? 0
             )
         }
 

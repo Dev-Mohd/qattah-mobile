@@ -171,15 +171,21 @@ public struct Participant: Identifiable, Hashable, Sendable {
     /// Name snapshot taken when the meal was logged.
     public var memberName: String
     public var share: Money
+    /// Set when this share is for a one-time guest; `memberId` is then the
+    /// host who pays for them.
+    public var guestName: String?
 
     public init(id: String = UUID().uuidString.lowercased(), recordId: String, memberId: String?,
-                memberName: String, share: Money) {
+                memberName: String, share: Money, guestName: String? = nil) {
         self.id = id
         self.recordId = recordId
         self.memberId = memberId
         self.memberName = memberName
         self.share = share
+        self.guestName = guestName
     }
+
+    public var isGuest: Bool { guestName != nil }
 }
 
 public struct Payment: Identifiable, Hashable, Sendable {
@@ -191,12 +197,15 @@ public struct Payment: Identifiable, Hashable, Sendable {
     public var note: String
     /// The day the money was actually paid (may differ from `createdAt`).
     public var paidOn: Day
+    /// Set when the member paid the restaurant bill of this meal: the payment
+    /// is created, edited and deleted together with the meal.
+    public var recordId: String?
     public var createdAt: Date
     public var updatedAt: Date
 
     public init(id: String = UUID().uuidString.lowercased(), listId: String, memberId: String?,
                 memberName: String, amount: Money, note: String = "", paidOn: Day,
-                createdAt: Date = .now, updatedAt: Date = .now) {
+                recordId: String? = nil, createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.listId = listId
         self.memberId = memberId
@@ -204,9 +213,13 @@ public struct Payment: Identifiable, Hashable, Sendable {
         self.amount = amount
         self.note = note
         self.paidOn = paidOn
+        self.recordId = recordId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
+
+    /// Paid the restaurant for a meal (managed from the meal, not editable on its own).
+    public var isBillPayment: Bool { recordId != nil }
 }
 
 /// A calendar day stored as "yyyy-MM-dd" (the format used by the existing database).

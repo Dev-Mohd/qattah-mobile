@@ -67,3 +67,25 @@ final class MoneyTests: XCTestCase {
         XCTAssertLessThan(Day("2026-01-31")!, Day("2026-02-01")!)
     }
 }
+
+final class GuestSplitTests: XCTestCase {
+    func testGuestShareIsChargedToHost() {
+        let shares = SplitCalculator.splitWithGuests(Money(riyals: 40), attendeeIds: ["a", "b", "c"],
+                                                     guests: [Guest(name: "خالد", hostId: "a")])
+        XCTAssertEqual(shares.count, 4)
+        XCTAssertEqual(shares.map(\.share).sum(), Money(riyals: 40))
+        XCTAssertEqual(shares.last?.memberId, "a")
+        XCTAssertEqual(shares.last?.guestName, "خالد")
+
+        let balances = BalanceCalculator.balances(
+            members: ["a", "b", "c"].map { Member(id: $0, listId: "l", name: $0) },
+            records: [MealRecord(id: "r", listId: "l", mealTypeId: nil, mealName: "غداء",
+                                 day: Day("2026-11-01")!, totalAmount: Money(riyals: 40))],
+            participants: shares.map { Participant(recordId: "r", memberId: $0.memberId, memberName: $0.memberId,
+                                                   share: $0.share, guestName: $0.guestName) },
+            payments: [])
+        let host = balances.members.first { $0.id == "a" }!
+        XCTAssertEqual(host.net, Money(riyals: 20))   // own 10 + guest 10
+        XCTAssertEqual(host.mealCount, 1)             // the guest is not a second meal
+    }
+}

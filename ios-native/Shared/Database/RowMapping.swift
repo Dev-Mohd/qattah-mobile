@@ -133,7 +133,8 @@ extension Participant {
                   recordId: row.string("record_id"),
                   memberId: row.optionalString("member_id"),
                   memberName: row.string("member_name", default: "عضو محذوف"),
-                  share: row.money("share"))
+                  share: row.money("share"),
+                  guestName: row.optionalString("guest_name"))
     }
 }
 
@@ -147,6 +148,7 @@ extension Payment {
                   amount: row.money("amount"),
                   note: row.string("note"),
                   paidOn: Day(row.string("paid_on")) ?? Day(createdAt),
+                  recordId: row.optionalString("record_id"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }

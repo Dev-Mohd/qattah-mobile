@@ -1,10 +1,11 @@
 import SwiftUI
 import QattahKit
 
-/// Record that a member paid. Defaults to paying off the full balance.
+/// Record (or edit) a member's payment. New payments default to the full balance.
 struct AddPaymentView: View {
     let member: Member
     let balance: MemberBalance?
+    var existing: Payment?
 
     @Environment(\.store) private var store
     @Environment(\.dismiss) private var dismiss
@@ -57,14 +58,14 @@ struct AddPaymentView: View {
                         HStack {
                             Text("الرصيد بعد السداد")
                             Spacer()
-                            let after = balance.net - amount
+                            let after = balance.net + (existing?.amount ?? .zero) - amount
                             MoneyText(money: after.magnitude, weight: .semibold)
                                 .foregroundStyle(after.isPositive ? Color.owes : after.isNegative ? Color.credit : .secondary)
                         }
                     }
                 }
             }
-            .navigationTitle("سداد \(member.name)")
+            .navigationTitle(existing == nil ? "سداد \(member.name)" : "تعديل سداد \(member.name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } }
@@ -75,7 +76,11 @@ struct AddPaymentView: View {
                 }
             }
             .onAppear {
-                if let owed = balance?.net, owed.isPositive, amountText.isEmpty {
+                if let existing {
+                    amountText = AmountParser.text(from: existing.amount)
+                    paidOn = existing.paidOn.date()
+                    note = existing.note
+                } else if let owed = balance?.net, owed.isPositive, amountText.isEmpty {
                     amountText = AmountParser.text(from: owed)
                 }
             }
@@ -85,9 +90,11 @@ struct AddPaymentView: View {
 
     private func save() {
         saving = true
-        let payment = Payment(listId: member.listId, memberId: member.id, memberName: member.name,
-                              amount: amount, note: note.trimmingCharacters(in: .whitespaces),
-                              paidOn: Day(paidOn))
+        var payment = existing ?? Payment(listId: member.listId, memberId: member.id, memberName: member.name,
+                                          amount: amount, paidOn: Day(paidOn))
+        payment.amount = amount
+        payment.note = note.trimmingCharacters(in: .whitespaces)
+        payment.paidOn = Day(paidOn)
         Task {
             do {
                 try await store.savePayment(payment)

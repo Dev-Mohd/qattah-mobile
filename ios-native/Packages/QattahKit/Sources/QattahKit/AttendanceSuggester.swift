@@ -40,14 +40,16 @@ public enum AttendanceSuggester {
            let last = records
             .filter({ $0.mealTypeId == mealType.id })
             .max(by: { ($0.day, $0.createdAt) < ($1.day, $1.createdAt) }) {
-            let lastIds = Set(participants.filter { $0.recordId == last.id }.compactMap(\.memberId))
+            let lastParticipants = participants.filter { $0.recordId == last.id }
+            let lastIds = Set(lastParticipants.filter { !$0.isGuest }.compactMap(\.memberId))
             let stillHere = active.map(\.id).filter { lastIds.contains($0) && activeIds.contains($0) }
             if !stillHere.isEmpty {
                 attendees = stillHere
                 reason = .sameAsLastTime(last.day)
             }
-            if !lastIds.isEmpty {
-                lastPerPerson = SplitCalculator.perPerson(last.totalAmount, attendeeCount: lastIds.count)
+            if !lastParticipants.isEmpty && last.splitMode == .equal {
+                // Guests count as people when working out the usual price per person.
+                lastPerPerson = SplitCalculator.perPerson(last.totalAmount, attendeeCount: lastParticipants.count)
             }
         }
 

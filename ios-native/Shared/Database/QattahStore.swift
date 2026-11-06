@@ -26,6 +26,29 @@ struct ListSnapshot: Sendable {
         orderLines.filter { $0.recordId == record.id }
     }
 
+    func guests(of record: MealRecord) -> [Guest] {
+        participants
+            .filter { $0.recordId == record.id && $0.isGuest }
+            .map { Guest(name: $0.guestName ?? "", hostId: $0.memberId ?? "") }
+    }
+
+    /// The payment created because a member paid this meal's bill.
+    func billPayment(of record: MealRecord) -> Payment? {
+        payments.first { $0.recordId == record.id }
+    }
+
+    func payments(of member: Member) -> [Payment] {
+        payments.filter { $0.memberId == member.id }
+    }
+
+    func meals(attendedBy member: Member) -> [(record: MealRecord, share: Money)] {
+        let shares = Dictionary(grouping: participants.filter { $0.memberId == member.id }, by: \.recordId)
+            .mapValues { $0.map(\.share).sum() }
+        return records.compactMap { record in
+            shares[record.id].map { (record: record, share: $0) }
+        }
+    }
+
     /// The latest itemized meal of a meal type, to repeat yesterday's order.
     func lastItemizedMeal(mealTypeId: String?) -> MealRecord? {
         records
@@ -208,18 +231,23 @@ final class QattahStore: Sendable {
 
     /// Saves a meal and splits its total equally among the attendees, to the halala.
     /// Passing an existing `record.id` replaces that meal (edit).
-    func saveMeal(_ record: MealRecord, attendees: [Member]) async throws {
+    func saveMeal(_ record: MealRecord, attendees: [Member], guests: [Guest] = [],
+                  payer: Member? = nil) async throws {
         var record = record
         record.splitMode = .equal
         record.extras = .zero
-        let shares = SplitCalculator.split(record.totalAmount, among: attendees.map(\.id))
-        try await write(record, attendees: attendees, shares: shares, lines: [])
+        let attendeeIds = Set(attendees.map(\.id))
+        let validGuests = guests.filter { attendeeIds.contains($0.hostId) && !$0.name.isEmpty }
+        let shares = SplitCalculator.splitWithGuests(record.totalAmount, attendeeIds: attendees.map(\.id),
+                                                     guests: validGuests)
+        try await write(record, attendees: attendees, shares: shares, lines: [], payer: payer)
     }
 
     /// Saves an itemized meal: each attendee pays for their own lines, shared
     /// lines (no member) are split equally, extras proportionally.
     /// The record's total is recomputed from the lines.
-    func saveItemizedMeal(_ record: MealRecord, attendees: [Member], lines: [OrderLine], extras: Money) async throws {
+    func saveItemizedMeal(_ record: MealRecord, attendees: [Member], lines: [OrderLine], extras: Money,
+                          payer: Member? = nil) async throws {
         let attendeeIds = Set(attendees.map(\.id))
         let kept = lines
             .filter { $0.quantity > 0 && ($0.memberId == nil || attendeeIds.contains($0.memberId!)) }
@@ -233,15 +261,15 @@ final class QattahStore: Sendable {
         record.splitMode = .items
         record.extras = extras
         record.totalAmount = result.total
-        try await write(record, attendees: attendees, shares: result.shares, lines: kept)
+        let shares = result.shares.map { GuestAwareShare(memberId: $0.id, guestName: nil, share: $0.share) }
+        try await write(record, attendees: attendees, shares: shares, lines: kept, payer: payer)
     }
 
-    private func write(_ record: MealRecord, attendees: [Member], shares: [(id: String, share: Money)],
-                       lines: [OrderLine]) async throws {
-        let perPerson = SplitCalculator.perPerson(record.totalAmount, attendeeCount: attendees.count)
+    private func write(_ record: MealRecord, attendees: [Member], shares: [GuestAwareShare],
+                       lines: [OrderLine], payer: Member?) async throws {
+        let perPerson = SplitCalculator.perPerson(record.totalAmount, attendeeCount: max(shares.count, 1))
         let names = Dictionary(uniqueKeysWithValues: attendees.map { ($0.id, $0.name) })
         let now = DBDate.string(.now)
-        let shareRows = shares.map { (id: $0.id, share: $0.share) }
 
         try await database.writer.write { db in
             try db.execute(sql: """
@@ -262,13 +290,26 @@ final class QattahStore: Sendable {
                                  DBDate.string(record.createdAt), now])
 
             try db.execute(sql: "DELETE FROM record_participants WHERE record_id = ?", arguments: [record.id])
-            for (memberId, share) in shareRows {
+            for row in shares {
                 try db.execute(sql: """
                     INSERT INTO record_participants (id, record_id, member_id, member_name, share,
-                                                     share_amount, is_present, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-                    """, arguments: [UUID().uuidString.lowercased(), record.id, memberId,
-                                     names[memberId] ?? "عضو", share.riyals, share.riyals, now, now])
+                                                     share_amount, is_present, guest_name, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                    """, arguments: [UUID().uuidString.lowercased(), record.id, row.memberId,
+                                     names[row.memberId] ?? "عضو", row.share.riyals, row.share.riyals,
+                                     row.guestName, now, now])
+            }
+
+            // "Who paid the restaurant": one payment linked to the meal.
+            try db.execute(sql: "DELETE FROM payments WHERE record_id = ?", arguments: [record.id])
+            if let payer {
+                try db.execute(sql: """
+                    INSERT INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
+                                          record_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [UUID().uuidString.lowercased(), record.listId, payer.id, payer.name,
+                                     record.totalAmount.riyals, "دفع حساب \(record.mealName)",
+                                     record.day.description, record.id, now, now])
             }
 
             try db.execute(sql: "DELETE FROM record_items WHERE record_id = ?", arguments: [record.id])
@@ -309,7 +350,8 @@ final class QattahStore: Sendable {
     }
 
     /// Re-inserts a deleted meal exactly as it was (for "undo").
-    func restoreMeal(_ record: MealRecord, participants: [Participant], lines: [OrderLine] = []) async throws {
+    func restoreMeal(_ record: MealRecord, participants: [Participant], lines: [OrderLine] = [],
+                     payments: [Payment] = []) async throws {
         let perPerson = SplitCalculator.perPerson(record.totalAmount, attendeeCount: participants.count).riyals
         try await database.writer.write { db in
             try db.execute(sql: """
@@ -333,10 +375,20 @@ final class QattahStore: Sendable {
             for p in participants {
                 try db.execute(sql: """
                     INSERT OR IGNORE INTO record_participants (id, record_id, member_id, member_name, share,
-                                                               share_amount, is_present, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                                                               share_amount, is_present, guest_name,
+                                                               created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
                     """, arguments: [p.id, p.recordId, p.memberId, p.memberName, p.share.riyals, p.share.riyals,
-                                     DBDate.string(.now), DBDate.string(.now)])
+                                     p.guestName, DBDate.string(.now), DBDate.string(.now)])
+            }
+            for payment in payments {
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
+                                                    record_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
+                                     payment.amount.riyals, payment.note, payment.paidOn.description,
+                                     payment.recordId, DBDate.string(payment.createdAt), DBDate.string(.now)])
             }
         }
     }

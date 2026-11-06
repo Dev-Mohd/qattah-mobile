@@ -164,6 +164,20 @@ final class AppDatabase: Sendable {
                 """)
         }
 
+        // One-time guests (their share is charged to the host) and payments
+        // linked to a meal ("who paid the restaurant").
+        migrator.registerMigration("v4_guests_bill_payer") { db in
+            if try !db.columns(in: "record_participants").map(\.name).contains("guest_name") {
+                try db.execute(sql: "ALTER TABLE record_participants ADD COLUMN guest_name TEXT")
+            }
+            if try !db.columns(in: "payments").map(\.name).contains("record_id") {
+                try db.execute(sql: """
+                    ALTER TABLE payments ADD COLUMN record_id TEXT REFERENCES records(id) ON DELETE CASCADE
+                    """)
+            }
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_payments_record ON payments(record_id)")
+        }
+
         return migrator
     }
 

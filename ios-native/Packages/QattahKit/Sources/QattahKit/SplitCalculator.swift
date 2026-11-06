@@ -34,4 +34,36 @@ public enum SplitCalculator {
         let extra = absolute % attendeeCount == 0 ? 0 : 1
         return Money(halalas: (total.halalas < 0 ? -1 : 1) * (base + extra))
     }
+
+    /// Equal split where one-time guests count as people and their share is
+    /// charged to their host. Returns one entry per person: members first
+    /// (in order), then guests.
+    public static func splitWithGuests(_ total: Money, attendeeIds: [String],
+                                       guests: [Guest]) -> [GuestAwareShare] {
+        let slots = attendeeIds.map { GuestAwareShare(memberId: $0, guestName: nil, share: .zero) }
+            + guests.map { GuestAwareShare(memberId: $0.hostId, guestName: $0.name, share: .zero) }
+        let shares = split(total, among: Array(slots.indices))
+        return zip(slots, shares).map { slot, part in
+            GuestAwareShare(memberId: slot.memberId, guestName: slot.guestName, share: part.share)
+        }
+    }
+}
+
+/// A one-time guest, paid for by a member.
+public struct Guest: Hashable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var hostId: String
+
+    public init(id: String = UUID().uuidString.lowercased(), name: String, hostId: String) {
+        self.id = id
+        self.name = name
+        self.hostId = hostId
+    }
+}
+
+public struct GuestAwareShare: Hashable, Sendable {
+    public let memberId: String
+    public let guestName: String?
+    public let share: Money
 }

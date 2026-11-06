@@ -13,6 +13,7 @@ struct ListDetailView: View {
     @State private var tab: DetailTab = .balances
     @State private var showingLogMeal = false
     @State private var paymentMember: Member?
+    @State private var ledgerMember: Member?
     @State private var renaming = false
     @State private var newName = ""
     @State private var confirmDelete = false
@@ -70,7 +71,8 @@ struct ListDetailView: View {
 
             switch tab {
             case .balances:
-                BalancesSection(snapshot: snapshot, balances: balances) { paymentMember = $0 }
+                BalancesSection(snapshot: snapshot, balances: balances,
+                                onPay: { paymentMember = $0 }, onOpen: { ledgerMember = $0 })
             case .meals:
                 MealsSection(snapshot: snapshot)
             case .report:
@@ -110,6 +112,9 @@ struct ListDetailView: View {
         }
         .sheet(isPresented: $showingLogMeal) {
             LogMealView(snapshot: snapshot)
+        }
+        .sheet(item: $ledgerMember) { member in
+            MemberLedgerView(listId: snapshot.list.id, memberId: member.id)
         }
         .sheet(item: $paymentMember) { member in
             AddPaymentView(member: member,
@@ -174,6 +179,7 @@ private struct BalancesSection: View {
     let snapshot: ListSnapshot
     let balances: ListBalances
     let onPay: (Member) -> Void
+    let onOpen: (Member) -> Void
     @State private var remindingAll = false
 
     var body: some View {
@@ -190,7 +196,8 @@ private struct BalancesSection: View {
 
             Section {
                 ForEach(sortedRows) { row in
-                    BalanceRow(row: row, listName: snapshot.list.name) { onPay(row.member) }
+                    BalanceRow(row: row, listName: snapshot.list.name,
+                               onPay: { onPay(row.member) }, onOpen: { onOpen(row.member) })
                 }
             } header: {
                 HStack {
@@ -207,7 +214,7 @@ private struct BalancesSection: View {
                     }
                 }
             } footer: {
-                Text("اضغط على العضو لتسجيل سداد، أو اسحب لإرسال تذكير بالواتساب")
+                Text("اضغط على العضو لعرض سداداته ووجباته، واسحب لتسجيل سداد أو إرسال تذكير")
             }
 
             if !balances.unassigned.isEmpty {
@@ -256,6 +263,7 @@ private struct BalanceRow: View {
     let row: MemberBalance
     let listName: String
     let onPay: () -> Void
+    let onOpen: () -> Void
     @Environment(AppSettings.self) private var settings
     @Environment(\.openURL) private var openURL
 
@@ -280,7 +288,7 @@ private struct BalanceRow: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onPay)
+        .onTapGesture(perform: onOpen)
         .swipeActions(edge: .leading) {
             Button(action: onPay) {
                 Label("سداد", systemImage: "banknote")
@@ -310,18 +318,47 @@ private struct MealsSection: View {
     let snapshot: ListSnapshot
     @Environment(\.store) private var store
     @State private var editing: MealRecord?
-    @State private var lastDeleted: (MealRecord, [Participant], [OrderLine])?
+    @State private var lastDeleted: (MealRecord, [Participant], [OrderLine], [Payment])?
+    @State private var query = ""
+    @State private var memberFilter: String?
+
+    /// Meals matching the search text (meal name, note, attendee or guest name) and the member filter.
+    private var filteredRecords: [MealRecord] {
+        let text = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return snapshot.records.filter { record in
+            let people = snapshot.participants(of: record)
+            if let memberFilter, !people.contains(where: { $0.memberId == memberFilter }) { return false }
+            guard !text.isEmpty else { return true }
+            let haystack = ([record.mealName, record.note, record.day.description]
+                            + people.map(\.memberName) + people.compactMap(\.guestName))
+                .joined(separator: " ").lowercased()
+            return haystack.contains(text)
+        }
+    }
 
     var body: some View {
         List {
             if snapshot.records.isEmpty {
                 ContentUnavailableView("لا توجد وجبات بعد", systemImage: "fork.knife",
                                        description: Text("اضغط «سجّل وجبة اليوم» للبدء"))
+            } else if filteredRecords.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+            if memberFilter != nil || !query.isEmpty, !filteredRecords.isEmpty {
+                Section {
+                    HStack {
+                        Text("\(filteredRecords.count) وجبة")
+                        Spacer()
+                        MoneyText(money: filteredRecords.map(\.totalAmount).sum(), weight: .semibold)
+                    }
+                    .font(.subheadline)
+                }
             }
             ForEach(groupedByMonth, id: \.key) { month, records in
                 Section(month) {
                     ForEach(records) { record in
-                        MealRow(record: record, participants: snapshot.participants(of: record))
+                        MealRow(record: record, participants: snapshot.participants(of: record),
+                                payer: snapshot.billPayment(of: record)?.memberName)
                             .contentShape(Rectangle())
                             .onTapGesture { editing = record }
                             .swipeActions {
@@ -329,6 +366,17 @@ private struct MealsSection: View {
                                     Label("حذف", systemImage: "trash")
                                 }
                             }
+                    }
+                }
+            }
+        }
+        .searchable(text: $query, prompt: "ابحث باسم وجبة أو عضو")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Picker("تصفية حسب العضو", selection: $memberFilter) {
+                    Text("كل الأعضاء").tag(String?.none)
+                    ForEach(snapshot.members) { member in
+                        Text(member.name).tag(Optional(member.id))
                     }
                 }
             }
@@ -347,7 +395,7 @@ private struct MealsSection: View {
     }
 
     private var groupedByMonth: [(key: String, value: [MealRecord])] {
-        Dictionary(grouping: snapshot.records, by: \.day.monthKey)
+        Dictionary(grouping: filteredRecords, by: \.day.monthKey)
             .sorted { $0.key > $1.key }
             .map { (key: $0.key, value: $0.value) }
     }
@@ -355,9 +403,10 @@ private struct MealsSection: View {
     private func delete(_ record: MealRecord) {
         let participants = snapshot.participants(of: record)
         let lines = snapshot.orderLines(of: record)
+        let payments = snapshot.payments.filter { $0.recordId == record.id }
         Task {
             try? await store.deleteMeal(id: record.id)
-            lastDeleted = (record, participants, lines)
+            lastDeleted = (record, participants, lines, payments)
             try? await Task.sleep(for: .seconds(5))
             if lastDeleted?.0.id == record.id { lastDeleted = nil }
         }
@@ -366,20 +415,30 @@ private struct MealsSection: View {
     private func undo() {
         guard let deleted = lastDeleted else { return }
         lastDeleted = nil
-        Task { try? await store.restoreMeal(deleted.0, participants: deleted.1, lines: deleted.2) }
+        Task { try? await store.restoreMeal(deleted.0, participants: deleted.1, lines: deleted.2, payments: deleted.3) }
     }
 }
 
 private struct MealRow: View {
     let record: MealRecord
     let participants: [Participant]
+    var payer: String?
+
+    private var details: String {
+        let members = participants.filter { !$0.isGuest }.count
+        let guests = participants.filter(\.isGuest).count
+        var parts = [record.day.description, "\(members) حاضر"]
+        if guests > 0 { parts.append("\(guests) ضيف") }
+        if record.splitMode == .items { parts.append("حسب الطلب") }
+        if let payer { parts.append("دفع \(payer)") }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.mealName).font(.body.weight(.medium))
-                Text("\(record.day.description) · \(participants.count) حاضر"
-                     + (record.splitMode == .items ? " · حسب الطلب" : ""))
+                Text(details)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !record.note.isEmpty {

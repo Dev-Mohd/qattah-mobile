@@ -136,4 +136,39 @@ final class QattahStoreTests: XCTestCase {
         XCTAssertTrue(after.orderLines.isEmpty)
         XCTAssertEqual(after.records.first?.splitMode, .equal)
     }
+
+    func testGuestsAndBillPayer() async throws {
+        let store = try makeStore()
+        let list = QattahList(name: "الدوام")
+        try await store.saveList(list)
+        let a = Member(listId: list.id, name: "أحمد")
+        let b = Member(listId: list.id, name: "سعد")
+        try await store.saveMember(a)
+        try await store.saveMember(b)
+
+        // 30 for a, b and a's guest → 10 each; a pays for the guest. b paid the restaurant.
+        let meal = MealRecord(listId: list.id, mealTypeId: nil, mealName: "غداء", day: Day("2026-11-03")!,
+                              totalAmount: Money(riyals: 30))
+        try await store.saveMeal(meal, attendees: [a, b], guests: [Guest(name: "خالد", hostId: a.id)], payer: b)
+
+        var snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        let record = try XCTUnwrap(snapshot.records.first)
+        XCTAssertEqual(snapshot.guests(of: record).map(\.name), ["خالد"])
+        XCTAssertEqual(snapshot.billPayment(of: record)?.memberId, b.id)
+        XCTAssertEqual(snapshot.billPayment(of: record)?.paidOn, Day("2026-11-03"))
+        let net = Dictionary(uniqueKeysWithValues: snapshot.balances.members.map { ($0.id, $0.net) })
+        XCTAssertEqual(net[a.id], Money(riyals: 20))   // own 10 + guest 10
+        XCTAssertEqual(net[b.id], Money(riyals: -20))  // own 10 − paid 30
+
+        // Editing without a payer removes the linked payment.
+        try await store.saveMeal(record, attendees: [a, b])
+        snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        XCTAssertTrue(snapshot.payments.isEmpty)
+
+        // Deleting the meal deletes its bill payment too.
+        try await store.saveMeal(record, attendees: [a, b], payer: a)
+        try await store.deleteMeal(id: record.id)
+        snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        XCTAssertTrue(snapshot.payments.isEmpty)
+    }
 }
