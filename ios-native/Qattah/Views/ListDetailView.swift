@@ -202,14 +202,6 @@ private struct BalancesSection: View {
                 .listRowBackground(Color.clear)
             }
 
-            if chartRows.count > 1 {
-                Section("من عليه ومن له") {
-                    BalancesChart(rows: chartRows)
-                        .frame(height: CGFloat(chartRows.count) * 30 + 16)
-                        .padding(.vertical, 6)
-                }
-            }
-
             Section {
                 ForEach(sortedRows) { row in
                     BalanceRow(row: row, listName: snapshot.list.name,
@@ -231,6 +223,14 @@ private struct BalancesSection: View {
                 }
             } footer: {
                 Text("اضغط على العضو لعرض سداداته ووجباته، واسحب لتسجيل سداد أو إرسال تذكير")
+            }
+
+            if chartRows.count > 1 {
+                Section("من عليه ومن له") {
+                    BalancesChart(rows: chartRows)
+                        .frame(height: CGFloat(chartRows.count) * 30 + 16)
+                        .padding(.vertical, 6)
+                }
             }
 
             if !balances.unassigned.isEmpty {
