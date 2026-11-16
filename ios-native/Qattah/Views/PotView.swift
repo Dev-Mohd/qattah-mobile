@@ -25,6 +25,7 @@ struct PotView: View {
                     ProgressView()
                 }
             }
+            .screenBackground(tint: Color(hex: snapshot?.list.color ?? "#10B981"))
             .navigationTitle("صندوق الشلة")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

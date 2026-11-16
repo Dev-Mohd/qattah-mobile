@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import Charts
 import GRDB
 import QattahKit
@@ -15,6 +16,8 @@ struct ListsView: View {
     @State private var pendingDelete: ListSummary?
     @State private var logMealSnapshot: ListSnapshot?
     @State private var appeared = false
+    @Namespace private var zoom
+    private let listMenuTip = ListMenuTip()
 
     private var totalOwed: Money { summaries.map(\.totalOwed).sum() }
     private var monthSpent: Money { summaries.map(\.monthSpent).sum() }
@@ -58,9 +61,12 @@ struct ListsView: View {
                         }
                         .padding(.horizontal, 4)
 
+                        TipView(listMenuTip)
+
                         ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
                             NavigationLink(value: summary.list.id) {
                                 ListCard(summary: summary)
+                                    .zoomSource(id: summary.list.id, in: zoom)
                             }
                             .buttonStyle(PressableCardStyle())
                             .contextMenu { contextMenu(for: summary) }
@@ -74,6 +80,7 @@ struct ListsView: View {
             .navigationTitle(greeting)
             .navigationDestination(for: String.self) { listId in
                 ListDetailView(listId: listId)
+                    .zoomDestination(id: listId, in: zoom)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -175,6 +182,7 @@ struct ListsView: View {
         }
         .disabled(summary.memberCount == 0)
         Button {
+            listMenuTip.invalidate(reason: .actionPerformed)
             editingList = summary.list
         } label: {
             Label("تعديل القائمة", systemImage: "pencil")

@@ -407,7 +407,7 @@ struct LogMealView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent)
+            .primaryActionStyle()
             .controlSize(.large)
             .disabled(!canSave)
         }

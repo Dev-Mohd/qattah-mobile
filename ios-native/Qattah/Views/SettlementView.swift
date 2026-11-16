@@ -69,6 +69,7 @@ struct SettlementView: View {
                     }
                 }
             }
+            .screenBackground(tint: Color(hex: snapshot.list.color))
             .navigationTitle("خطة التسوية")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

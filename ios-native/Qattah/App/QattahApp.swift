@@ -9,6 +9,10 @@ struct QattahApp: App {
     @State private var showSplash = true
     @State private var toaster = Toaster()
 
+    init() {
+        AppTips.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             ZStack {

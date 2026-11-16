@@ -40,7 +40,7 @@ struct ToastOverlay: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
-                .background(.regularMaterial, in: Capsule())
+                .glassCapsule()
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
                 .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
                 .onAppear { bounce += 1 }
