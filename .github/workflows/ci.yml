@@ -1,0 +1,91 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["ios-native/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["ios-native/**", ".github/workflows/ci.yml"]
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    name: QattahKit tests
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        working-directory: ios-native/Packages/QattahKit
+        run: swift test
+
+  app:
+    name: Build app + widget, database tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios-native/Pods
+            ~/Library/Caches/CocoaPods
+          key: pods-${{ runner.os }}-${{ hashFiles('ios-native/Podfile') }}
+
+      # Order matters: pod install needs the generated project.
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Install pods
+        run: pod install
+
+      - name: Pick a simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) if 'iOS' in k for x in d[k] if 'iPhone' in x['name']))")
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices available | grep "$UDID"
+
+      # Builds the app and the embedded widget, then runs QattahTests
+      # (database, migrations, backup) and the QattahKit tests.
+      - name: Build and test
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild test \
+            -workspace Qattah.xcworkspace \
+            -scheme Qattah \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            > build/xcodebuild.log 2>&1 || true
+          grep -E "error:|Test Suite .* (passed|failed)|Test Case .* failed|\*\* (TEST|BUILD)" build/xcodebuild.log | sort -u | head -120 || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" build/xcodebuild.log
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: |
+            ios-native/build/xcodebuild.log
+            ios-native/build/TestResults.xcresult
+          retention-days: 7

@@ -297,19 +297,21 @@ final class QattahStore: Sendable {
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO records (id, list_id, meal_type_id, meal_name, date, total_amount, total_price,
-                                     per_person, price_per_person, note, split_mode, extras, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     per_person, price_per_person, note, split_mode, extras, treat_member_id,
+                                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   meal_type_id = excluded.meal_type_id, meal_name = excluded.meal_name,
                   date = excluded.date, total_amount = excluded.total_amount,
                   total_price = excluded.total_price, per_person = excluded.per_person,
                   price_per_person = excluded.price_per_person, note = excluded.note,
                   split_mode = excluded.split_mode, extras = excluded.extras,
+                  treat_member_id = excluded.treat_member_id,
                   updated_at = excluded.updated_at
                 """, arguments: [record.id, record.listId, record.mealTypeId, record.mealName,
                                  record.day.description, record.totalAmount.riyals, record.totalAmount.riyals,
                                  perPerson.riyals, perPerson.riyals, record.note,
-                                 record.splitMode.rawValue, record.extras.riyals,
+                                 record.splitMode.rawValue, record.extras.riyals, record.treatMemberId,
                                  DBDate.string(record.createdAt), now])
 
             try db.execute(sql: "DELETE FROM record_participants WHERE record_id = ?", arguments: [record.id])
@@ -380,12 +382,12 @@ final class QattahStore: Sendable {
             try db.execute(sql: """
                 INSERT OR IGNORE INTO records (id, list_id, meal_type_id, meal_name, date, total_amount,
                                                total_price, per_person, price_per_person, note, split_mode,
-                                               extras, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                               extras, treat_member_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: [record.id, record.listId, record.mealTypeId, record.mealName,
                                  record.day.description, record.totalAmount.riyals, record.totalAmount.riyals,
                                  perPerson, perPerson, record.note, record.splitMode.rawValue,
-                                 record.extras.riyals, DBDate.string(record.createdAt),
+                                 record.extras.riyals, record.treatMemberId, DBDate.string(record.createdAt),
                                  DBDate.string(record.updatedAt)])
             for line in lines {
                 try db.execute(sql: """
@@ -422,14 +424,14 @@ final class QattahStore: Sendable {
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
-                                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      batch_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   amount = excluded.amount, note = excluded.note, paid_on = excluded.paid_on,
                   updated_at = excluded.updated_at
                 """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
                                  payment.amount.riyals, payment.note, payment.paidOn.description,
-                                 DBDate.string(payment.createdAt), DBDate.string(.now)])
+                                 payment.batchId, DBDate.string(payment.createdAt), DBDate.string(.now)])
         }
     }
 
@@ -439,11 +441,12 @@ final class QattahStore: Sendable {
             for payment in payments {
                 try db.execute(sql: """
                     INSERT INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
-                                          record_id, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                          record_id, batch_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
                                      payment.amount.riyals, payment.note, payment.paidOn.description,
-                                     payment.recordId, DBDate.string(payment.createdAt), DBDate.string(.now)])
+                                     payment.recordId, payment.batchId,
+                                     DBDate.string(payment.createdAt), DBDate.string(.now)])
             }
         }
     }

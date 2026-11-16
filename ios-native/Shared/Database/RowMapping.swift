@@ -122,6 +122,7 @@ extension MealRecord {
                   totalAmount: Money(riyals: total),
                   note: row.string("note"),
                   splitMode: MealRecord.SplitMode(rawValue: row.string("split_mode")) ?? .equal,
+                  treatMemberId: row.optionalString("treat_member_id"),
                   extras: row.money("extras"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
@@ -150,6 +151,7 @@ extension Payment {
                   note: row.string("note"),
                   paidOn: Day(row.string("paid_on")) ?? Day(createdAt),
                   recordId: row.optionalString("record_id"),
+                  batchId: row.optionalString("batch_id"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }

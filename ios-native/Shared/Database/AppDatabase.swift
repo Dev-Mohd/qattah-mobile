@@ -185,6 +185,20 @@ final class AppDatabase: Sendable {
             }
         }
 
+        // Pot top-ups recorded together (payments.batch_id) and treats
+        // (records.treat_member_id: the member who invited everyone).
+        migrator.registerMigration("v6_payment_batch_treat") { db in
+            if try !db.columns(in: "payments").map(\.name).contains("batch_id") {
+                try db.execute(sql: "ALTER TABLE payments ADD COLUMN batch_id TEXT")
+            }
+            if try !db.columns(in: "records").map(\.name).contains("treat_member_id") {
+                try db.execute(sql: """
+                    ALTER TABLE records ADD COLUMN treat_member_id TEXT REFERENCES members(id) ON DELETE SET NULL
+                    """)
+            }
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_payments_batch ON payments(batch_id)")
+        }
+
         return migrator
     }
 
