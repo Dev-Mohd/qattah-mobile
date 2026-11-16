@@ -39,6 +39,7 @@ final class AppSettings {
         static let onboardingSeen = "onboardingSeen"
         static let migratedFromFlutter = "migratedFlutterPreferences"
         static let paymentDetails = "paymentDetails"
+        static let messageTone = "messageTone"
     }
 
     private let defaults: UserDefaults
@@ -61,6 +62,11 @@ final class AppSettings {
 
     var onboardingSeen: Bool {
         didSet { defaults.set(onboardingSeen, forKey: Key.onboardingSeen) }
+    }
+
+    /// How top-up reminders sound.
+    var messageTone: MessageTone {
+        didSet { defaults.set(messageTone.rawValue, forKey: Key.messageTone) }
     }
 
     /// The organizer's bank / wallet details, added to reminders.
@@ -93,6 +99,7 @@ final class AppSettings {
         reminderHour = defaults.object(forKey: Key.reminderHour) as? Int ?? 12
         reminderMinute = defaults.object(forKey: Key.reminderMinute) as? Int ?? 0
         onboardingSeen = defaults.bool(forKey: Key.onboardingSeen)
+        messageTone = MessageTone(rawValue: defaults.string(forKey: Key.messageTone) ?? "") ?? .friendly
         paymentDetails = defaults.data(forKey: Key.paymentDetails)
             .flatMap { try? JSONDecoder().decode(PaymentDetails.self, from: $0) } ?? PaymentDetails()
     }

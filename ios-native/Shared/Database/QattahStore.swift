@@ -174,14 +174,24 @@ final class QattahStore: Sendable {
     func saveList(_ list: QattahList) async throws {
         try await database.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO lists (id, name, color, icon, is_archived, organizer_member_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO lists (id, name, color, icon, is_archived, organizer_member_id, pot_threshold,
+                                   created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   name = excluded.name, color = excluded.color, icon = excluded.icon,
                   is_archived = excluded.is_archived, organizer_member_id = excluded.organizer_member_id,
                   updated_at = excluded.updated_at
                 """, arguments: [list.id, list.name, list.color, list.icon, list.isArchived ? 1 : 0,
-                                 list.organizerId, DBDate.string(list.createdAt), DBDate.string(.now)])
+                                 list.organizerId, list.potThreshold.riyals,
+                                 DBDate.string(list.createdAt), DBDate.string(.now)])
+        }
+    }
+
+    /// Changes only the pot threshold (so a stale copy of the list cannot overwrite other fields).
+    func setPotThreshold(_ threshold: Money, listId: String) async throws {
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE lists SET pot_threshold = ?, updated_at = ? WHERE id = ?",
+                           arguments: [threshold.riyals, DBDate.string(.now), listId])
         }
     }
 
