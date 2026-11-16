@@ -37,6 +37,8 @@ struct LogMealView: View {
     @State private var saving = false
     @State private var didLoad = false
     @State private var copiedOrder = false
+    @State private var showingMore = false
+    @FocusState private var amountFocused: Bool
 
     /// Whose order the menu picker is adding to.
     enum PickTarget: Identifiable, Hashable {
@@ -87,18 +89,30 @@ struct LogMealView: View {
     var body: some View {
         NavigationStack {
             Form {
-                headerSection
+                // 1. What and how much — the only things most days need.
+                heroSection
 
+                // 2. Who attended.
                 Section {
-                    ForEach(activeMembers) { member in
-                        AttendeeRow(member: member,
-                                    isOn: attendees.contains(member.id),
-                                    share: share(for: member),
-                                    lines: splitMode == .items ? lines(for: member.id) : [],
-                                    showsItems: splitMode == .items && attendees.contains(member.id),
-                                    onToggle: { toggle(member) },
-                                    onAddItem: { picking = .member(member.id) },
-                                    onChangeQuantity: changeQuantity)
+                    if splitMode == .equal {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                            ForEach(activeMembers) { member in
+                                AttendeeChip(member: member, isOn: attendees.contains(member.id),
+                                             share: share(for: member)) { toggle(member) }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        ForEach(activeMembers) { member in
+                            AttendeeRow(member: member,
+                                        isOn: attendees.contains(member.id),
+                                        share: share(for: member),
+                                        lines: lines(for: member.id),
+                                        showsItems: attendees.contains(member.id),
+                                        onToggle: { toggle(member) },
+                                        onAddItem: { picking = .member(member.id) },
+                                        onChangeQuantity: changeQuantity)
+                        }
                     }
                 } header: {
                     HStack {
@@ -116,30 +130,36 @@ struct LogMealView: View {
                     if let hint { Text(hint) }
                 }
 
-                if splitMode == .equal {
-                    guestsSection
-                }
-
                 if splitMode == .items {
                     itemsSections
                 }
 
-                payerSection
-
-                Section("ملاحظة") {
-                    TextField("اختياري", text: $note, axis: .vertical)
+                // 3. Everything optional, folded away until needed.
+                Section {
+                    DisclosureGroup(isExpanded: $showingMore) {
+                        if splitMode == .equal {
+                            guestRows
+                        }
+                        payerRow
+                        TextField("ملاحظة (اختياري)", text: $note, axis: .vertical)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("خيارات إضافية")
+                            Text(moreSummary).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(editing == nil ? "تسجيل وجبة" : "تعديل الوجبة")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("إلغاء") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("حفظ", action: save)
-                        .fontWeight(.semibold)
-                        .disabled(!canSave)
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("تم") { amountFocused = false }
                 }
             }
             .safeAreaInset(edge: .bottom) { summaryBar }
@@ -150,110 +170,135 @@ struct LogMealView: View {
                     add(item, delta: delta, for: target.memberId)
                 }
             }
+            .alert("ضيف لمرة واحدة", isPresented: $addingGuest) {
+                TextField("اسم الضيف", text: $newGuestName)
+                ForEach(orderedAttendees) { member in
+                    Button("على حساب \(member.name)") { addGuest(host: member.id) }
+                }
+                Button("إلغاء", role: .cancel) {}
+            } message: {
+                Text("اكتب اسم الضيف ثم اختر من يدفع عنه")
+            }
+            .onChange(of: mealTypeId) { _, _ in applySuggestion(keepAttendees: editing != nil) }
+            .onChange(of: splitMode) { _, mode in
+                if mode == .items && lines.isEmpty { repeatLastOrder(silently: true) }
+            }
             .onAppear(perform: load)
         }
     }
 
     // MARK: - Sections
 
-    @ViewBuilder
-    private var headerSection: some View {
-        if !snapshot.mealTypes.isEmpty {
-            Section {
-                Picker("الوجبة", selection: $mealTypeId) {
-                    ForEach(snapshot.mealTypes) { type in
-                        Text(type.name).tag(Optional(type.id))
+    private var heroSection: some View {
+        Section {
+            VStack(spacing: 16) {
+                // Amount: typed for an equal split, computed for an itemized one.
+                VStack(spacing: 4) {
+                    Text(splitMode == .equal ? "المبلغ الكلي" : "إجمالي الطلبات")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if splitMode == .equal {
+                            TextField("0", text: $totalText)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.center)
+                                .focused($amountFocused)
+                                .fixedSize()
+                                .frame(minWidth: 60)
+                        } else {
+                            Text(MoneyFormatter.number(total))
+                                .contentTransition(.numericText(value: total.riyals))
+                                .animation(.snappy, value: total)
+                        }
+                        Text(MoneyFormatter.riyalSign)
+                            .font(.custom("saudi_riyalregular", size: 26, relativeTo: .largeTitle))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.system(size: 46, weight: .black, design: .rounded))
+                    .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { if splitMode == .equal { amountFocused = true } }
+
+                if !snapshot.mealTypes.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(snapshot.mealTypes) { type in
+                                ChoiceChip(title: type.name, isOn: mealTypeId == type.id) {
+                                    mealTypeId = type.id
+                                }
+                            }
+                        }
                     }
                 }
+
+                HStack(spacing: 8) {
+                    ChoiceChip(title: "اليوم", isOn: Calendar.current.isDateInToday(day)) { day = .now }
+                    ChoiceChip(title: "أمس", isOn: Calendar.current.isDateInYesterday(day)) {
+                        day = Calendar.current.date(byAdding: .day, value: -1, to: .now) ?? .now
+                    }
+                    Spacer(minLength: 0)
+                    DatePicker("التاريخ", selection: $day, in: ...Date.now.addingTimeInterval(86_400),
+                               displayedComponents: .date)
+                        .labelsHidden()
+                }
+
+                Picker("طريقة التقسيم", selection: $splitMode) {
+                    Text("بالتساوي").tag(MealRecord.SplitMode.equal)
+                    Text("كلٌّ حسب طلبه").tag(MealRecord.SplitMode.items)
+                }
                 .pickerStyle(.segmented)
-                .onChange(of: mealTypeId) { _, _ in applySuggestion(keepAttendees: editing != nil) }
             }
-        }
-
-        Section {
-            Picker("طريقة التقسيم", selection: $splitMode) {
-                Text("بالتساوي").tag(MealRecord.SplitMode.equal)
-                Text("كلٌّ حسب طلبه").tag(MealRecord.SplitMode.items)
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: splitMode) { _, mode in
-                Haptics.tap()
-                if mode == .items && lines.isEmpty { repeatLastOrder(silently: true) }
-            }
-
-            DatePicker("التاريخ", selection: $day, in: ...Date.now.addingTimeInterval(86_400),
-                       displayedComponents: .date)
-
-            if splitMode == .equal {
-                HStack {
-                    Text("المبلغ الكلي")
-                    Spacer()
-                    TextField("0", text: $totalText)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .font(.title3.weight(.semibold).monospacedDigit())
-                        .frame(maxWidth: 140)
-                    Text(MoneyFormatter.riyalSign)
-                        .font(.custom("saudi_riyalregular", size: 18, relativeTo: .title3))
-                }
-            }
+            .padding(.vertical, 6)
         }
     }
 
-    private var guestsSection: some View {
-        Section {
-            ForEach(guests) { guest in
-                HStack {
-                    Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(.secondary)
-                    Text(guest.name)
-                    Spacer()
-                    Text("على \(memberName(guest.hostId))").font(.caption).foregroundStyle(.secondary)
-                }
-                .opacity(attendees.contains(guest.hostId) ? 1 : 0.4)
-                .swipeActions {
-                    Button(role: .destructive) {
-                        guests.removeAll { $0.id == guest.id }
-                        recomputeTotal()
-                    } label: { Label("حذف", systemImage: "trash") }
-                }
-            }
-            Button {
-                newGuestName = ""
-                newGuestHost = orderedAttendees.first?.id
-                addingGuest = true
-            } label: {
-                Label("إضافة ضيف", systemImage: "person.badge.plus")
-            }
-            .disabled(attendees.isEmpty)
-        } header: {
-            Text("ضيوف")
-        } footer: {
-            Text("الضيف يُحسب في التقسيم ونصيبه على العضو الذي دعاه، بدون أن يُضاف للأعضاء.")
+    /// One line describing what is set under "more options".
+    private var moreSummary: String {
+        var parts: [String] = []
+        if splitMode == .equal && !activeGuests.isEmpty {
+            parts.append(activeGuests.count == 1 ? "ضيف واحد" : "\(activeGuests.count) ضيوف")
         }
-        .alert("ضيف لمرة واحدة", isPresented: $addingGuest) {
-            TextField("اسم الضيف", text: $newGuestName)
-            ForEach(orderedAttendees) { member in
-                Button("على حساب \(member.name)") { addGuest(host: member.id) }
-            }
-            Button("إلغاء", role: .cancel) {}
-        } message: {
-            Text("اكتب اسم الضيف ثم اختر من يدفع عنه")
-        }
+        if let payerId { parts.append("دفع \(memberName(payerId))") }
+        if !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append("ملاحظة") }
+        return parts.isEmpty ? "ضيف، من دفع للمطعم، ملاحظة" : parts.joined(separator: " · ")
     }
 
-    private var payerSection: some View {
-        Section {
-            Picker("من دفع للمطعم؟", selection: $payerId) {
-                Text("لم يدفع أحد من الأعضاء").tag(String?.none)
-                ForEach(activeMembers) { member in
-                    Text(member.name).tag(Optional(member.id))
+    @ViewBuilder
+    private var guestRows: some View {
+        ForEach(guests) { guest in
+            HStack {
+                Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(.secondary)
+                Text(guest.name)
+                Text("على \(memberName(guest.hostId))").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    withAnimation { guests.removeAll { $0.id == guest.id } }
+                    recomputeTotal()
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("حذف الضيف \(guest.name)")
             }
-        } footer: {
-            if let payerId, total.isPositive {
-                Text("سيُسجَّل لـ \(memberName(payerId)) سداد بقيمة \(MoneyFormatter.plain(total)) مرتبط بهذه الوجبة.")
-            } else {
-                Text("إذا دفع أحد الأعضاء الحساب من جيبه يُحسب له كسداد تلقائياً.")
+            .opacity(attendees.contains(guest.hostId) ? 1 : 0.4)
+        }
+        Button {
+            newGuestName = ""
+            newGuestHost = orderedAttendees.first?.id
+            addingGuest = true
+        } label: {
+            Label("إضافة ضيف", systemImage: "person.badge.plus")
+        }
+        .disabled(attendees.isEmpty)
+    }
+
+    private var payerRow: some View {
+        Picker("من دفع للمطعم؟", selection: $payerId) {
+            Text("لم يُحدَّد").tag(String?.none)
+            ForEach(activeMembers) { member in
+                Text(member.name).tag(Optional(member.id))
             }
         }
     }
@@ -332,29 +377,42 @@ struct LogMealView: View {
     }
 
     private var summaryBar: some View {
-        HStack {
-            if attendees.isEmpty {
-                Text("اختر الحاضرين").foregroundStyle(.secondary)
-            } else if total.isPositive {
-                if splitMode == .equal {
-                    Text("نصيب الشخص")
-                    Spacer()
-                    MoneyText(money: SplitCalculator.perPerson(total, attendeeCount: peopleCount),
-                              font: .title3, weight: .bold)
-                        .contentTransition(.numericText())
-                        .animation(.snappy, value: peopleCount)
+        VStack(spacing: 10) {
+            HStack {
+                if attendees.isEmpty {
+                    Text("اختر الحاضرين").foregroundStyle(.secondary)
+                } else if total.isPositive {
+                    if splitMode == .equal {
+                        Text("نصيب الشخص")
+                        Spacer()
+                        MoneyText(money: SplitCalculator.perPerson(total, attendeeCount: peopleCount),
+                                  font: .headline, weight: .bold)
+                            .contentTransition(.numericText())
+                            .animation(.snappy, value: peopleCount)
+                    } else {
+                        Text("\(attendees.count) حاضرين")
+                        Spacer()
+                        MoneyText(money: total, font: .headline, weight: .bold)
+                    }
                 } else {
-                    Text("الإجمالي")
-                    Spacer()
-                    MoneyText(money: total, font: .title3, weight: .bold)
+                    Text(splitMode == .equal ? "أدخل المبلغ الكلي" : "أضف طلبات الحاضرين")
+                        .foregroundStyle(.secondary)
                 }
-            } else {
-                Text(splitMode == .equal ? "أدخل المبلغ الكلي" : "أضف طلبات الحاضرين")
-                    .foregroundStyle(.secondary)
             }
+            .font(.subheadline)
+
+            Button(action: save) {
+                Text(editing == nil ? "حفظ الوجبة" : "حفظ التعديلات")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!canSave)
         }
-        .padding()
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.vertical, 12)
         .background(.bar)
     }
 
@@ -482,6 +540,7 @@ struct LogMealView: View {
             autoTotalText = "\u{0}" // treat the saved total as typed by hand
             lines = snapshot.orderLines(of: editing)
             guests = snapshot.guests(of: editing)
+            showingMore = !guests.isEmpty || !editing.note.isEmpty || snapshot.billPayment(of: editing) != nil
             payerId = snapshot.billPayment(of: editing)?.memberId
             extrasText = AmountParser.text(from: editing.extras)
             note = editing.note
@@ -560,6 +619,84 @@ struct LogMealView: View {
 }
 
 // MARK: - Rows
+
+/// Capsule option (meal type, day).
+private struct ChoiceChip: View {
+    let title: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(isOn ? Color.qattahAccent : Color.secondary.opacity(0.12), in: Capsule())
+                .foregroundStyle(isOn ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .animation(.snappy, value: isOn)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
+/// Compact attendee tile for equal splits: tap to toggle, share shown below the name.
+private struct AttendeeChip: View {
+    let member: Member
+    let isOn: Bool
+    let share: Money?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(member.emoji).font(.title2)
+                Text(member.name)
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Group {
+                    if let share {
+                        Text(MoneyFormatter.number(share))
+                            .contentTransition(.numericText(value: share.riyals))
+                    } else {
+                        Text("—")
+                    }
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(isOn ? Color.qattahAccent : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(isOn ? Color.qattahAccent.opacity(0.14) : Color.secondary.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(isOn ? Color.qattahAccent : .clear, lineWidth: 1.5)
+            }
+            .overlay(alignment: .topTrailing) {
+                if isOn {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Color.qattahAccent)
+                        .padding(5)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .opacity(isOn ? 1 : 0.6)
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isOn)
+        .animation(.snappy, value: share)
+        .accessibilityLabel(member.name)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
 
 private struct AttendeeRow: View {
     let member: Member
