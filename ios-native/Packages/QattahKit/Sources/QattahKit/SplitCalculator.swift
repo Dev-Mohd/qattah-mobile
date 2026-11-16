@@ -47,6 +47,14 @@ public enum SplitCalculator {
             GuestAwareShare(memberId: slot.memberId, guestName: slot.guestName, share: part.share)
         }
     }
+
+    /// A treat (عزيمة): the host takes the whole bill, everyone else attends for free.
+    /// Guests are free too, so they get no rows.
+    public static func treatShares(_ total: Money, attendeeIds: [String], hostId: String) -> [GuestAwareShare] {
+        attendeeIds.map { id in
+            GuestAwareShare(memberId: id, guestName: nil, share: id == hostId ? total : .zero)
+        }
+    }
 }
 
 /// A one-time guest, paid for by a member.

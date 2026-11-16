@@ -32,6 +32,8 @@ struct LogMealView: View {
     @State private var newGuestHost: String?
     /// Member who paid the restaurant (gets a linked payment). nil = not paid by a member.
     @State private var payerId: String?
+    /// Set when the meal is a treat (عزيمة): the attendee who takes the whole bill.
+    @State private var treatId: String?
     @State private var note = ""
     @State private var hint: String?
     @State private var saving = false
@@ -137,9 +139,10 @@ struct LogMealView: View {
                 // 3. Everything optional, folded away until needed.
                 Section {
                     DisclosureGroup(isExpanded: $showingMore) {
-                        if splitMode == .equal {
+                        if splitMode == .equal && activeTreatId == nil {
                             guestRows
                         }
+                        treatRow
                         payerRow
                         TextField("ملاحظة (اختياري)", text: $note, axis: .vertical)
                     } label: {
@@ -260,9 +263,10 @@ struct LogMealView: View {
         if splitMode == .equal && !activeGuests.isEmpty {
             parts.append(activeGuests.count == 1 ? "ضيف واحد" : "\(activeGuests.count) ضيوف")
         }
+        if let host = activeTreatId { parts.append("عزيمة \(memberName(host))") }
         if let payerId { parts.append("دفع \(memberName(payerId))") }
         if !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append("ملاحظة") }
-        return parts.isEmpty ? "ضيف، من دفع للمطعم، ملاحظة" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "ضيف، عزيمة، من دفع للمطعم، ملاحظة" : parts.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -292,6 +296,15 @@ struct LogMealView: View {
             Label("إضافة ضيف", systemImage: "person.badge.plus")
         }
         .disabled(attendees.isEmpty)
+    }
+
+    private var treatRow: some View {
+        Picker("عزيمة على حساب", selection: $treatId) {
+            Text("ليست عزيمة").tag(String?.none)
+            ForEach(orderedAttendees) { member in
+                Text(member.name).tag(Optional(member.id))
+            }
+        }
     }
 
     private var payerRow: some View {
@@ -381,6 +394,10 @@ struct LogMealView: View {
             HStack {
                 if attendees.isEmpty {
                     Text("اختر الحاضرين").foregroundStyle(.secondary)
+                } else if total.isPositive, let host = activeTreatId {
+                    Text("🎉 عزيمة على حساب \(memberName(host))")
+                    Spacer()
+                    MoneyText(money: total, font: .headline, weight: .bold)
                 } else if total.isPositive {
                     if splitMode == .equal {
                         Text("نصيب الشخص")
@@ -435,8 +452,14 @@ struct LogMealView: View {
 
     // MARK: - Shares & lines
 
+    /// The treat host, if still among the attendees.
+    private var activeTreatId: String? {
+        treatId.flatMap { attendees.contains($0) ? $0 : nil }
+    }
+
     private func share(for member: Member) -> Money? {
         guard attendees.contains(member.id), total.isPositive else { return nil }
+        if let host = activeTreatId { return member.id == host ? total : .zero }
         switch splitMode {
         case .equal:
             let shares = SplitCalculator.splitWithGuests(total, attendeeIds: orderedAttendees.map(\.id),
@@ -540,7 +563,9 @@ struct LogMealView: View {
             autoTotalText = "\u{0}" // treat the saved total as typed by hand
             lines = snapshot.orderLines(of: editing)
             guests = snapshot.guests(of: editing)
-            showingMore = !guests.isEmpty || !editing.note.isEmpty || snapshot.billPayment(of: editing) != nil
+            treatId = editing.treatMemberId
+            showingMore = !guests.isEmpty || !editing.note.isEmpty || editing.isTreat
+                || snapshot.billPayment(of: editing) != nil
             payerId = snapshot.billPayment(of: editing)?.memberId
             extrasText = AmountParser.text(from: editing.extras)
             note = editing.note
@@ -592,6 +617,7 @@ struct LogMealView: View {
             day: Day(day),
             totalAmount: total,
             note: note.trimmingCharacters(in: .whitespacesAndNewlines),
+            treatMemberId: activeTreatId,
             createdAt: editing?.createdAt ?? .now
         )
         let people = orderedAttendees

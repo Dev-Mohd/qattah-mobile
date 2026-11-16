@@ -15,6 +15,7 @@ struct PotView: View {
     @State private var snapshot: ListSnapshot?
     @State private var appeared = false
     @State private var contacted: Set<String> = []
+    @State private var toppingUp = false
 
     var body: some View {
         NavigationStack {
@@ -109,6 +110,25 @@ struct PotView: View {
             }
         }
         .onAppear { appeared = true }
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                Haptics.tap()
+                toppingUp = true
+            } label: {
+                Label("تعبئة الشلة", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .primaryActionStyle()
+            .controlSize(.large)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .disabled(pot.members.isEmpty)
+        }
+        .sheet(isPresented: $toppingUp) {
+            TopUpView(snapshot: snapshot, preselected: Set(pot.membersNeedingTopUp.map(\.id)))
+        }
     }
 
     /// Suggests the amount of the member's latest top-up, if they have one.

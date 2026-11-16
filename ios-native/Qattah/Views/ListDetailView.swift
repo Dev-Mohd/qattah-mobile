@@ -398,7 +398,8 @@ private struct MealsSection: View {
                 Section(month) {
                     ForEach(records) { record in
                         MealRow(record: record, participants: snapshot.participants(of: record),
-                                payer: snapshot.billPayment(of: record)?.memberName)
+                                payer: snapshot.billPayment(of: record)?.memberName,
+                                treatHost: snapshot.members.first { $0.id == record.treatMemberId }?.name)
                             .contentShape(Rectangle())
                             .onTapGesture { editing = record }
                             .contextMenu {
@@ -481,6 +482,7 @@ private struct MealsSection: View {
         copy.day = .today()
         copy.createdAt = .now
         copy.note = ""
+        copy.treatMemberId = nil   // repeating a treat is an ordinary split
         let lines = snapshot.orderLines(of: record).map {
             OrderLine(recordId: copy.id, memberId: $0.memberId, itemName: $0.itemName,
                       unitPrice: $0.unitPrice, quantity: $0.quantity)
@@ -508,6 +510,7 @@ private struct MealRow: View {
     let record: MealRecord
     let participants: [Participant]
     var payer: String?
+    var treatHost: String?
 
     private var details: String {
         let members = participants.filter { !$0.isGuest }.count
@@ -515,6 +518,7 @@ private struct MealRow: View {
         var parts = [record.day.description, "\(members) حاضر"]
         if guests > 0 { parts.append("\(guests) ضيف") }
         if record.splitMode == .items { parts.append("حسب الطلب") }
+        if let treatHost { parts.append("🎉 عزيمة \(treatHost)") }
         if let payer { parts.append("دفع \(payer)") }
         return parts.joined(separator: " · ")
     }
