@@ -76,6 +76,7 @@ extension QattahList {
                   color: row.string("color", default: "#2563EB"),
                   icon: row.optionalString("icon"),
                   isArchived: row.bool("is_archived", default: false),
+                  organizerId: row.optionalString("organizer_member_id"),
                   createdAt: row.date("created_at"),
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }
@@ -122,6 +123,7 @@ extension MealRecord {
                   note: row.string("note"),
                   splitMode: MealRecord.SplitMode(rawValue: row.string("split_mode")) ?? .equal,
                   extras: row.money("extras"),
+                  treatMemberId: row.optionalString("treat_member_id"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }
@@ -149,6 +151,7 @@ extension Payment {
                   note: row.string("note"),
                   paidOn: Day(row.string("paid_on")) ?? Day(createdAt),
                   recordId: row.optionalString("record_id"),
+                  batchId: row.optionalString("batch_id"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }

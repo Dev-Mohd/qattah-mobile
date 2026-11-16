@@ -178,6 +178,27 @@ final class AppDatabase: Sendable {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_payments_record ON payments(record_id)")
         }
 
+        // Which member runs the pot (for the settlement plan).
+        migrator.registerMigration("v5_list_organizer") { db in
+            if try !db.columns(in: "lists").map(\.name).contains("organizer_member_id") {
+                try db.execute(sql: "ALTER TABLE lists ADD COLUMN organizer_member_id TEXT")
+            }
+        }
+
+        // Pot top-ups recorded together (payments.batch_id) and treats
+        // (records.treat_member_id: the member who invited everyone).
+        migrator.registerMigration("v6_payment_batch_treat") { db in
+            if try !db.columns(in: "payments").map(\.name).contains("batch_id") {
+                try db.execute(sql: "ALTER TABLE payments ADD COLUMN batch_id TEXT")
+            }
+            if try !db.columns(in: "records").map(\.name).contains("treat_member_id") {
+                try db.execute(sql: """
+                    ALTER TABLE records ADD COLUMN treat_member_id TEXT REFERENCES members(id) ON DELETE SET NULL
+                    """)
+            }
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_payments_batch ON payments(batch_id)")
+        }
+
         return migrator
     }
 

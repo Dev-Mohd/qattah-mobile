@@ -14,13 +14,15 @@ enum WhatsApp {
 /// Sends each debtor a personal reminder, one tap per person
 /// (iOS does not allow sending messages automatically).
 struct RemindAllView: View {
-    let listName: String
+    let snapshot: ListSnapshot
     let debtors: [MemberBalance]
+    private var listName: String { snapshot.list.name }
 
     @Environment(AppSettings.self) private var settings
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @State private var sent: Set<String> = []
+    @State private var sharing: (url: URL, message: String)?
 
     var body: some View {
         NavigationStack {
@@ -46,6 +48,18 @@ struct RemindAllView: View {
                                 MoneyText(money: row.net, font: .caption).foregroundStyle(Color.owes)
                             }
                             Spacer()
+                            Button {
+                                if let url = try? MemberStatementRenderer.render(
+                                    snapshot: snapshot, member: row.member, balance: row,
+                                    payment: settings.paymentDetails) {
+                                    sent.insert(row.id)
+                                    sharing = (url, message)
+                                }
+                            } label: {
+                                Image(systemName: "doc.richtext")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("كشف حساب PDF")
                             if let url = WhatsApp.url(phone: row.member.phone, text: message) {
                                 Button {
                                     sent.insert(row.id)
@@ -65,8 +79,12 @@ struct RemindAllView: View {
                         }
                     }
                 } footer: {
-                    Text("الأعضاء الذين لهم رقم جوال يُفتح لهم الواتساب مباشرة. أضف الرقم من تبويب الأعضاء.")
+                    Text("زر 📄 يرسل لكل عضو كشف حساب PDF أنيق بمبالغه ووجباته. الأعضاء الذين لهم رقم جوال يُفتح لهم الواتساب مباشرة.")
                 }
+            }
+            .sheet(item: Binding(get: { sharing.map { ShareItem(url: $0.url) } },
+                                 set: { if $0 == nil { sharing = nil } })) { item in
+                ShareSheet(items: [item.url, sharing?.message ?? ""])
             }
             .navigationTitle("تذكير \(debtors.count) أعضاء")
             .navigationBarTitleDisplayMode(.inline)

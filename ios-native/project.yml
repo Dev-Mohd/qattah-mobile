@@ -5,6 +5,8 @@
 name: Qattah
 options:
   bundleIdPrefix: qattah.com
+  # Marks the project as up to date for Xcode 26 (no "recommended settings" prompt).
+  xcodeVersion: "26.5"
   deploymentTarget:
     iOS: "17.0"
   developmentLanguage: ar

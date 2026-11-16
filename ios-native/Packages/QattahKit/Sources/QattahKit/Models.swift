@@ -11,17 +11,20 @@ public struct QattahList: Identifiable, Hashable, Sendable {
     public var color: String
     public var icon: String?
     public var isArchived: Bool
+    /// The member who runs the pot (receives the money). nil = someone outside the list.
+    public var organizerId: String?
     public var createdAt: Date
     public var updatedAt: Date
 
     public init(id: String = UUID().uuidString.lowercased(), name: String, color: String = "#10B981",
-                icon: String? = nil, isArchived: Bool = false,
+                icon: String? = nil, isArchived: Bool = false, organizerId: String? = nil,
                 createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.name = name
         self.color = color
         self.icon = icon
         self.isArchived = isArchived
+        self.organizerId = organizerId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -93,8 +96,12 @@ public struct MealRecord: Identifiable, Hashable, Sendable {
     public var splitMode: SplitMode
     /// Delivery / tax / tip added on top of the items (itemized meals only).
     public var extras: Money
+    /// Set when the meal is a treat (عزيمة): the member who invited everyone.
+    public var treatMemberId: String?
     public var createdAt: Date
     public var updatedAt: Date
+
+    public var isTreat: Bool { treatMemberId != nil }
 
     public enum SplitMode: String, Sendable, Hashable {
         /// Total divided equally between attendees.
@@ -105,7 +112,7 @@ public struct MealRecord: Identifiable, Hashable, Sendable {
 
     public init(id: String = UUID().uuidString.lowercased(), listId: String, mealTypeId: String?,
                 mealName: String, day: Day, totalAmount: Money, note: String = "",
-                splitMode: SplitMode = .equal, extras: Money = .zero,
+                splitMode: SplitMode = .equal, extras: Money = .zero, treatMemberId: String? = nil,
                 createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.listId = listId
@@ -116,6 +123,7 @@ public struct MealRecord: Identifiable, Hashable, Sendable {
         self.note = note
         self.splitMode = splitMode
         self.extras = extras
+        self.treatMemberId = treatMemberId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -200,12 +208,15 @@ public struct Payment: Identifiable, Hashable, Sendable {
     /// Set when the member paid the restaurant bill of this meal: the payment
     /// is created, edited and deleted together with the meal.
     public var recordId: String?
+    /// Groups payments recorded together (one "top-up" of the pot for several members).
+    public var batchId: String?
     public var createdAt: Date
     public var updatedAt: Date
 
     public init(id: String = UUID().uuidString.lowercased(), listId: String, memberId: String?,
                 memberName: String, amount: Money, note: String = "", paidOn: Day,
-                recordId: String? = nil, createdAt: Date = .now, updatedAt: Date = .now) {
+                recordId: String? = nil, batchId: String? = nil,
+                createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.listId = listId
         self.memberId = memberId
@@ -214,6 +225,7 @@ public struct Payment: Identifiable, Hashable, Sendable {
         self.note = note
         self.paidOn = paidOn
         self.recordId = recordId
+        self.batchId = batchId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

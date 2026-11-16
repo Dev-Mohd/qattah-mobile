@@ -63,7 +63,16 @@ struct ListSummary: Identifiable, Sendable {
     var memberCount: Int
     var totalOwed: Money
     var lastMealDay: Day?
+    /// Spending this calendar month.
+    var monthSpent: Money = .zero
+    var monthMeals: Int = 0
+    /// Spending for each of the last 14 days, oldest first (for the sparkline).
+    var recentDaily: [Money] = []
+    /// Biggest debtor's name, for a hint on the card.
+    var topDebtor: String?
     var id: String { list.id }
+
+    var loggedToday: Bool { lastMealDay == .today() }
 }
 
 /// Reads and writes app data.
@@ -104,10 +113,23 @@ final class QattahStore: Sendable {
             guard let snapshot = try fetchSnapshot(db, listId: list.id) else {
                 return ListSummary(list: list, memberCount: 0, totalOwed: .zero, lastMealDay: nil)
             }
+            let balances = snapshot.balances
+            let month = Month.current()
+            let monthRecords = snapshot.records.filter { month.contains($0.day) }
+            let calendar = Calendar.current
+            let byDay = Dictionary(grouping: snapshot.records, by: \.day).mapValues { $0.map(\.totalAmount).sum() }
+            let recent = (0..<14).reversed().map { offset -> Money in
+                let date = calendar.date(byAdding: .day, value: -offset, to: .now) ?? .now
+                return byDay[Day(date, calendar: calendar)] ?? .zero
+            }
             return ListSummary(list: list,
                                memberCount: snapshot.members.filter(\.isActive).count,
-                               totalOwed: snapshot.balances.totalOwed,
-                               lastMealDay: snapshot.records.map(\.day).max())
+                               totalOwed: balances.totalOwed,
+                               lastMealDay: snapshot.records.map(\.day).max(),
+                               monthSpent: monthRecords.map(\.totalAmount).sum(),
+                               monthMeals: monthRecords.count,
+                               recentDaily: recent,
+                               topDebtor: balances.members.filter { $0.net.isPositive }.max { $0.net < $1.net }?.member.name)
         }
     }
 
@@ -152,13 +174,14 @@ final class QattahStore: Sendable {
     func saveList(_ list: QattahList) async throws {
         try await database.writer.write { db in
             try db.execute(sql: """
-                INSERT INTO lists (id, name, color, icon, is_archived, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO lists (id, name, color, icon, is_archived, organizer_member_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   name = excluded.name, color = excluded.color, icon = excluded.icon,
-                  is_archived = excluded.is_archived, updated_at = excluded.updated_at
+                  is_archived = excluded.is_archived, organizer_member_id = excluded.organizer_member_id,
+                  updated_at = excluded.updated_at
                 """, arguments: [list.id, list.name, list.color, list.icon, list.isArchived ? 1 : 0,
-                                 DBDate.string(list.createdAt), DBDate.string(.now)])
+                                 list.organizerId, DBDate.string(list.createdAt), DBDate.string(.now)])
         }
     }
 
@@ -274,19 +297,21 @@ final class QattahStore: Sendable {
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO records (id, list_id, meal_type_id, meal_name, date, total_amount, total_price,
-                                     per_person, price_per_person, note, split_mode, extras, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     per_person, price_per_person, note, split_mode, extras, treat_member_id,
+                                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   meal_type_id = excluded.meal_type_id, meal_name = excluded.meal_name,
                   date = excluded.date, total_amount = excluded.total_amount,
                   total_price = excluded.total_price, per_person = excluded.per_person,
                   price_per_person = excluded.price_per_person, note = excluded.note,
                   split_mode = excluded.split_mode, extras = excluded.extras,
+                  treat_member_id = excluded.treat_member_id,
                   updated_at = excluded.updated_at
                 """, arguments: [record.id, record.listId, record.mealTypeId, record.mealName,
                                  record.day.description, record.totalAmount.riyals, record.totalAmount.riyals,
                                  perPerson.riyals, perPerson.riyals, record.note,
-                                 record.splitMode.rawValue, record.extras.riyals,
+                                 record.splitMode.rawValue, record.extras.riyals, record.treatMemberId,
                                  DBDate.string(record.createdAt), now])
 
             try db.execute(sql: "DELETE FROM record_participants WHERE record_id = ?", arguments: [record.id])
@@ -357,12 +382,12 @@ final class QattahStore: Sendable {
             try db.execute(sql: """
                 INSERT OR IGNORE INTO records (id, list_id, meal_type_id, meal_name, date, total_amount,
                                                total_price, per_person, price_per_person, note, split_mode,
-                                               extras, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                               extras, treat_member_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: [record.id, record.listId, record.mealTypeId, record.mealName,
                                  record.day.description, record.totalAmount.riyals, record.totalAmount.riyals,
                                  perPerson, perPerson, record.note, record.splitMode.rawValue,
-                                 record.extras.riyals, DBDate.string(record.createdAt),
+                                 record.extras.riyals, record.treatMemberId, DBDate.string(record.createdAt),
                                  DBDate.string(record.updatedAt)])
             for line in lines {
                 try db.execute(sql: """
@@ -399,14 +424,30 @@ final class QattahStore: Sendable {
         try await database.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
-                                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                      batch_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   amount = excluded.amount, note = excluded.note, paid_on = excluded.paid_on,
                   updated_at = excluded.updated_at
                 """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
                                  payment.amount.riyals, payment.note, payment.paidOn.description,
-                                 DBDate.string(payment.createdAt), DBDate.string(.now)])
+                                 payment.batchId, DBDate.string(payment.createdAt), DBDate.string(.now)])
+        }
+    }
+
+    /// Saves several payments in one transaction (e.g. both sides of a transfer).
+    func savePayments(_ payments: [Payment]) async throws {
+        try await database.writer.write { db in
+            for payment in payments {
+                try db.execute(sql: """
+                    INSERT INTO payments (id, list_id, member_id, member_name, amount, note, paid_on,
+                                          record_id, batch_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [payment.id, payment.listId, payment.memberId, payment.memberName,
+                                     payment.amount.riyals, payment.note, payment.paidOn.description,
+                                     payment.recordId, payment.batchId,
+                                     DBDate.string(payment.createdAt), DBDate.string(.now)])
+            }
         }
     }
 
