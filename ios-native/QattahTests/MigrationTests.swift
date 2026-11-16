@@ -113,3 +113,36 @@ final class PotThresholdTests: XCTestCase {
         XCTAssertEqual(snapshot.list.icon, "☕️")
     }
 }
+
+final class TreatTests: XCTestCase {
+    func testTreatChargesHostAndFallsBackWhenHostAbsent() async throws {
+        let store = QattahStore(database: try AppDatabase.inMemory())
+        let list = QattahList(name: "الدوام")
+        try await store.saveList(list)
+        let a = Member(listId: list.id, name: "أحمد")
+        let b = Member(listId: list.id, name: "سعد")
+        let c = Member(listId: list.id, name: "فهد")
+        for member in [a, b, c] { try await store.saveMember(member) }
+
+        var meal = MealRecord(listId: list.id, mealTypeId: nil, mealName: "غداء", day: Day("2026-11-10")!,
+                              totalAmount: Money(riyals: 90), treatMemberId: b.id)
+        try await store.saveMeal(meal, attendees: [a, b, c])
+
+        var snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        var net = Dictionary(uniqueKeysWithValues: snapshot.balances.members.map { ($0.id, $0.net) })
+        XCTAssertEqual(net[b.id], Money(riyals: 90))
+        XCTAssertEqual(net[a.id], .zero)
+        XCTAssertEqual(snapshot.participants.count, 3)          // everyone is recorded as attending
+        XCTAssertEqual(snapshot.records.first?.treatMemberId, b.id)
+
+        // Editing so the host no longer attends turns it back into a normal split.
+        meal.totalAmount = Money(riyals: 60)
+        try await store.saveMeal(meal, attendees: [a, c])
+        snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        net = Dictionary(uniqueKeysWithValues: snapshot.balances.members.map { ($0.id, $0.net) })
+        XCTAssertNil(snapshot.records.first?.treatMemberId)
+        XCTAssertEqual(net[a.id], Money(riyals: 30))
+        XCTAssertEqual(net[c.id], Money(riyals: 30))
+        XCTAssertEqual(net[b.id], .zero)
+    }
+}

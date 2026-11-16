@@ -271,8 +271,15 @@ final class QattahStore: Sendable {
         record.extras = .zero
         let attendeeIds = Set(attendees.map(\.id))
         let validGuests = guests.filter { attendeeIds.contains($0.hostId) && !$0.name.isEmpty }
-        let shares = SplitCalculator.splitWithGuests(record.totalAmount, attendeeIds: attendees.map(\.id),
+        // A treat only counts if the host attended; otherwise it is a normal split.
+        if let hostId = record.treatMemberId, !attendeeIds.contains(hostId) { record.treatMemberId = nil }
+        let shares: [GuestAwareShare]
+        if let hostId = record.treatMemberId {
+            shares = SplitCalculator.treatShares(record.totalAmount, attendeeIds: attendees.map(\.id), hostId: hostId)
+        } else {
+            shares = SplitCalculator.splitWithGuests(record.totalAmount, attendeeIds: attendees.map(\.id),
                                                      guests: validGuests)
+        }
         try await write(record, attendees: attendees, shares: shares, lines: [], payer: payer)
     }
 
@@ -294,7 +301,13 @@ final class QattahStore: Sendable {
         record.splitMode = .items
         record.extras = extras
         record.totalAmount = result.total
-        let shares = result.shares.map { GuestAwareShare(memberId: $0.id, guestName: nil, share: $0.share) }
+        if let hostId = record.treatMemberId, !attendeeIds.contains(hostId) { record.treatMemberId = nil }
+        let shares: [GuestAwareShare]
+        if let hostId = record.treatMemberId {
+            shares = SplitCalculator.treatShares(result.total, attendeeIds: attendees.map(\.id), hostId: hostId)
+        } else {
+            shares = result.shares.map { GuestAwareShare(memberId: $0.id, guestName: nil, share: $0.share) }
+        }
         try await write(record, attendees: attendees, shares: shares, lines: kept, payer: payer)
     }
 

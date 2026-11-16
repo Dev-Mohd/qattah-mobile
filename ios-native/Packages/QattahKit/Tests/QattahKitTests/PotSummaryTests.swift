@@ -72,3 +72,42 @@ final class PotSummaryTests: XCTestCase {
         XCTAssertTrue(formal.contains("الآيبان: SA03 8000 0000 6080 1016 7519"))
     }
 }
+
+final class TopUpAndTreatTests: XCTestCase {
+    func testTopUpPaymentsShareOneBatch() {
+        let members = ["a", "b", "c"].map { Member(id: $0, listId: "l", name: $0) }
+        let payments = PotCalculator.topUpPayments(listId: "l", members: members, amount: Money(riyals: 100),
+                                                   on: Day("2026-11-27")!, note: "تعبئة نوفمبر 2026")
+        XCTAssertEqual(payments.count, 3)
+        XCTAssertEqual(Set(payments.compactMap(\.batchId)).count, 1)
+        XCTAssertEqual(payments.map(\.amount).sum(), Money(riyals: 300))
+        XCTAssertTrue(PotCalculator.topUpPayments(listId: "l", members: members, amount: .zero,
+                                                  on: .today(), note: "").isEmpty)
+    }
+
+    func testLastTopUpAmountIgnoresOrdinaryPayments() {
+        let old = Payment(listId: "l", memberId: "a", memberName: "a", amount: Money(riyals: 100),
+                          paidOn: Day("2026-10-27")!, batchId: "b1")
+        let new = Payment(listId: "l", memberId: "a", memberName: "a", amount: Money(riyals: 150),
+                          paidOn: Day("2026-11-27")!, batchId: "b2")
+        let single = Payment(listId: "l", memberId: "a", memberName: "a", amount: Money(riyals: 20),
+                             paidOn: Day("2026-11-28")!)
+        XCTAssertEqual(PotCalculator.lastTopUpAmount([old, single, new]), Money(riyals: 150))
+        XCTAssertNil(PotCalculator.lastTopUpAmount([single]))
+    }
+
+    func testTreatChargesOnlyTheHost() {
+        let shares = SplitCalculator.treatShares(Money(riyals: 90), attendeeIds: ["a", "b", "c"], hostId: "b")
+        XCTAssertEqual(shares.map(\.share), [.zero, Money(riyals: 90), .zero])
+
+        let balances = BalanceCalculator.balances(
+            members: ["a", "b", "c"].map { Member(id: $0, listId: "l", name: $0) },
+            records: [MealRecord(id: "r", listId: "l", mealTypeId: nil, mealName: "غداء",
+                                 day: Day("2026-11-01")!, totalAmount: Money(riyals: 90), treatMemberId: "b")],
+            participants: shares.map { Participant(recordId: "r", memberId: $0.memberId, memberName: $0.memberId,
+                                                   share: $0.share) },
+            payments: [])
+        XCTAssertEqual(balances.members.map(\.net), [.zero, Money(riyals: 90), .zero])
+        XCTAssertEqual(balances.members.map(\.mealCount), [1, 1, 1])   // everyone still attended
+    }
+}

@@ -56,6 +56,27 @@ public enum PotCalculator {
     }
 }
 
+extension PotCalculator {
+    /// Payments for one top-up of the pot: the same amount for each chosen
+    /// member, sharing a batch id so they show as one event.
+    public static func topUpPayments(listId: String, members: [Member], amount: Money, on day: Day,
+                                     note: String, batchId: String = UUID().uuidString.lowercased()) -> [Payment] {
+        guard amount.isPositive else { return [] }
+        return members.map {
+            Payment(listId: listId, memberId: $0.id, memberName: $0.name, amount: amount, note: note,
+                    paidOn: day, batchId: batchId)
+        }
+    }
+
+    /// The per-member amount of the most recent top-up, to pre-fill the next one.
+    public static func lastTopUpAmount(_ payments: [Payment]) -> Money? {
+        payments
+            .filter { $0.batchId != nil && $0.amount.isPositive }
+            .max { ($0.paidOn, $0.createdAt) < ($1.paidOn, $1.createdAt) }?
+            .amount
+    }
+}
+
 /// How reminder messages sound.
 public enum MessageTone: String, CaseIterable, Sendable, Codable {
     case friendly
