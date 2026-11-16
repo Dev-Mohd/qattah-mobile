@@ -172,6 +172,7 @@ private struct BalancesSection: View {
     @State private var remindingAll = false
     @State private var showingSettlement = false
     @State private var showingPaste = false
+    @State private var showingPot = false
 
     var body: some View {
         List {
@@ -188,6 +189,7 @@ private struct BalancesSection: View {
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
+                        QuickAction(title: "الصندوق", symbol: "tray.full") { showingPot = true }
                         QuickAction(title: "خطة التسوية", symbol: "arrow.left.arrow.right") { showingSettlement = true }
                         QuickAction(title: "من رسالة البنك", symbol: "text.viewfinder") { showingPaste = true }
                         if balances.members.contains(where: { $0.status == .owes }) {
@@ -245,6 +247,7 @@ private struct BalancesSection: View {
         }
         .sheet(isPresented: $showingSettlement) { SettlementView(snapshot: snapshot) }
         .sheet(isPresented: $showingPaste) { PasteBankMessageView(snapshot: snapshot) }
+        .sheet(isPresented: $showingPot) { PotView(listId: snapshot.list.id) }
         .sheet(isPresented: $remindingAll) {
             RemindAllView(snapshot: snapshot,
                           debtors: balances.members.filter { $0.status == .owes }.sorted { $0.net > $1.net })

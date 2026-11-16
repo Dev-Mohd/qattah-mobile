@@ -13,11 +13,14 @@ public struct QattahList: Identifiable, Hashable, Sendable {
     public var isArchived: Bool
     /// The member who runs the pot (receives the money). nil = someone outside the list.
     public var organizerId: String?
+    /// Pot view: members whose credit drops below this are asked to top up.
+    public var potThreshold: Money
     public var createdAt: Date
     public var updatedAt: Date
 
     public init(id: String = UUID().uuidString.lowercased(), name: String, color: String = "#10B981",
                 icon: String? = nil, isArchived: Bool = false, organizerId: String? = nil,
+                potThreshold: Money = Money(halalas: 5000),
                 createdAt: Date = .now, updatedAt: Date = .now) {
         self.id = id
         self.name = name
@@ -25,6 +28,7 @@ public struct QattahList: Identifiable, Hashable, Sendable {
         self.icon = icon
         self.isArchived = isArchived
         self.organizerId = organizerId
+        self.potThreshold = potThreshold
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

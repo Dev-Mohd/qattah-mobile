@@ -77,6 +77,7 @@ extension QattahList {
                   icon: row.optionalString("icon"),
                   isArchived: row.bool("is_archived", default: false),
                   organizerId: row.optionalString("organizer_member_id"),
+                  potThreshold: Money(riyals: (row["pot_threshold"] as Double?) ?? 50),
                   createdAt: row.date("created_at"),
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }

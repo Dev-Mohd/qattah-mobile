@@ -93,3 +93,23 @@ final class MigrationTests: XCTestCase {
         XCTAssertEqual(after.records.first?.treatMemberId, a.id)
     }
 }
+
+final class PotThresholdTests: XCTestCase {
+    func testThresholdDefaultsAndUpdatesWithoutTouchingOtherFields() async throws {
+        let store = QattahStore(database: try AppDatabase.inMemory())
+        var list = QattahList(name: "الدوام", icon: "☕️")
+        try await store.saveList(list)
+        var snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        XCTAssertEqual(snapshot.list.potThreshold, Money(riyals: 50))
+
+        try await store.setPotThreshold(Money(riyals: 80), listId: list.id)
+
+        // Saving an older copy of the list (e.g. after a rename) keeps the new threshold.
+        list.name = "فطور الدوام"
+        try await store.saveList(list)
+        snapshot = try XCTUnwrap(try store.snapshot(listId: list.id))
+        XCTAssertEqual(snapshot.list.potThreshold, Money(riyals: 80))
+        XCTAssertEqual(snapshot.list.name, "فطور الدوام")
+        XCTAssertEqual(snapshot.list.icon, "☕️")
+    }
+}

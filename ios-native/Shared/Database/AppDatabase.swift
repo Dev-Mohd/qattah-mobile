@@ -199,6 +199,13 @@ final class AppDatabase: Sendable {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_payments_batch ON payments(batch_id)")
         }
 
+        // Pot view: credit level below which a member is asked to top up.
+        migrator.registerMigration("v7_pot_threshold") { db in
+            if try !db.columns(in: "lists").map(\.name).contains("pot_threshold") {
+                try db.execute(sql: "ALTER TABLE lists ADD COLUMN pot_threshold REAL NOT NULL DEFAULT 50")
+            }
+        }
+
         return migrator
     }
 
