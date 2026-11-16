@@ -122,8 +122,8 @@ extension MealRecord {
                   totalAmount: Money(riyals: total),
                   note: row.string("note"),
                   splitMode: MealRecord.SplitMode(rawValue: row.string("split_mode")) ?? .equal,
-                  treatMemberId: row.optionalString("treat_member_id"),
                   extras: row.money("extras"),
+                  treatMemberId: row.optionalString("treat_member_id"),
                   createdAt: createdAt,
                   updatedAt: row.date("updated_at", fallback: "created_at"))
     }
