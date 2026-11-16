@@ -30,6 +30,7 @@ struct MemberLedgerView: View {
                     ProgressView()
                 }
             }
+            .screenBackground(tint: Color(hex: snapshot?.list.color ?? "#10B981"))
             .navigationTitle(member.map { "\($0.emoji) \($0.name)" } ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

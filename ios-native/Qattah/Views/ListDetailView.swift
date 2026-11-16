@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import Charts
 import GRDB
 import QattahKit
@@ -81,6 +82,7 @@ struct ListDetailView: View {
                 MembersSection(snapshot: snapshot)
             }
         }
+        .screenBackground(tint: Color(hex: snapshot.list.color))
         .safeAreaInset(edge: .bottom) {
             if tab != .report {
                 logMealButton(snapshot)
@@ -144,7 +146,7 @@ struct ListDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
+        .primaryActionStyle()
         .controlSize(.large)
         .padding(.horizontal)
         .padding(.bottom, 8)
@@ -203,6 +205,9 @@ private struct BalancesSection: View {
             }
 
             Section {
+                TipView(BalanceSwipeTip())
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 ForEach(sortedRows) { row in
                     BalanceRow(row: row, listName: snapshot.list.name,
                                onPay: { onPay(row.member) }, onOpen: { onOpen(row.member) })
@@ -316,7 +321,10 @@ private struct BalanceRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .swipeActions(edge: .leading) {
-            Button(action: onPay) {
+            Button {
+                BalanceSwipeTip().invalidate(reason: .actionPerformed)
+                onPay()
+            } label: {
                 Label("سداد", systemImage: "banknote")
             }
             .tint(.credit)
@@ -380,6 +388,11 @@ private struct MealsSection: View {
                     }
                     .font(.subheadline)
                 }
+            }
+            if !filteredRecords.isEmpty {
+                TipView(MealRepeatTip())
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
             }
             ForEach(groupedByMonth, id: \.key) { month, records in
                 Section(month) {
@@ -459,6 +472,7 @@ private struct MealsSection: View {
     /// Logs the same meal again today: same people, same split (and the same
     /// order for itemized meals). The bill payer is not copied.
     private func repeatToday(_ record: MealRecord) {
+        MealRepeatTip().invalidate(reason: .actionPerformed)
         let attendeeIds = Set(snapshot.participants(of: record).filter { !$0.isGuest }.compactMap(\.memberId))
         let attendees = snapshot.members.filter { attendeeIds.contains($0.id) && $0.isActive }
         guard !attendees.isEmpty else { return }
@@ -533,7 +547,7 @@ struct UndoBanner: View {
             Button("تراجع", action: onUndo).fontWeight(.semibold)
         }
         .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .glassPanel(cornerRadius: 14)
         .padding(.horizontal)
     }
 }
@@ -750,8 +764,8 @@ private struct QuickAction: View {
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color.qattahAccent.opacity(0.12), in: Capsule())
                 .foregroundStyle(Color.qattahAccent)
+                .glassCapsule(tint: Color.qattahAccent.opacity(0.14), interactive: true)
         }
         .buttonStyle(PressableCardStyle())
     }
